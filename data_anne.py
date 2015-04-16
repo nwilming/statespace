@@ -5,7 +5,6 @@ from itertools import product as iproduct
 import glob, os
 from pylab import *
 
-
 conditions = ['stim_strength', 'response', 'choice', 'correct']
 
 def simplify_data(filename, output, downsample=True):
@@ -51,7 +50,10 @@ def simplify_data(filename, output, downsample=True):
 
 
 def minify_subject(substr, directory, outputdir):
-    files = glob.glob(os.path.join(directory, substr+'*'))
+    files = glob.glob(os.path.join(directory, substr+'*.mat'))
+    if len(files) == 0:
+        raise RuntimeError('No Files found in %s with glob %s*.mat'%(directory, substr))
+    print 'Minifying', files
     for filename in files:
         output = os.path.join(outputdir, 'minified', filename.replace(directory, ''))
         simplify_data(filename, output)
@@ -127,17 +129,15 @@ def recode_regressors(trial_conditions):
     trial_conditions[trial_conditions[:, 3] == 0, 3] = -1
     return trial_conditions
 
-def preprocess_data():
-    subjects = ['P%2d'%i for i in [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 
-        13, 14, 15, 16, 17, 18, 19, 20, 21]
-    for subject in subjects:
-        source_dir = '/home/aurai/Data/MEG-PL/%s/MEG/Preproc/'%subject
-        target_dir = '/home/nwilming/data/anne_meg/'        
-        minify_subject(source_dir, '*cleandata', target_dir)
-        length, widths = subjects2datamat('%s*cleandata'%subject, 
-            fullfile(target_dir, 'minified')):
-        combine_subjects('%s*cleandata', fullfile(target_dir, 'minified', 
-            length, width):
+def preprocess_data(subject):
+    source_dir = '/home/aurai/Data/MEG-PL/%s/MEG/Preproc/'%subject
+    print source_dir
+    target_dir = '/home/nwilming/data/anne_meg/'        
+    minify_subject(subject+'*cleandata', source_dir, target_dir)
+    length, widths = subjects2datamat('%s*cleandata'%subject, 
+        os.path.join(target_dir, 'minified'))
+    combine_subjects('%s_cleandata'%subject, os.path.join(target_dir, 'minified'), 
+        length, min(widths))
 
 
 def analyze_subs(sub, epoche):
@@ -166,5 +166,5 @@ def analyze_subs(sub, epoche):
 
 if __name__ == '__main__':
     import sys
-    sub, epoche = sys.argv[1:3]
-    analyze_subs(sub, epoche)
+    subject = sys.argv[1]
+    preprocess_data(subject)
