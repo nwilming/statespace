@@ -193,6 +193,17 @@ def valid_conditions(data, factors):
     return conditions
 
 
+def get_trajectory(data, factors, axis1, axis2):
+    results = {}    
+    conditions = list(dict_product(factors))
+    for i, condition in enumerate(conditions):
+        population_activity = condition_matrix(data, [condition])
+        assert population_activity.shape[1] == data.data.shape[1]
+        vax1 = dot(axis1, population_activity)
+        vax2 = dot(axis2, population_activity)
+        results[condition] = (vax1, vax2)
+    return results
+
 def plot_population_activity(data, factors, axis1, axis2, 
         legend=False, epochs=None):
     import seaborn as sns
