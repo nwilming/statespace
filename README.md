@@ -1,2 +1,2 @@
-# statespace
+# Statespace
 MEG Statespace analysis
