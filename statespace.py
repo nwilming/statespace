@@ -95,7 +95,7 @@ def conmean(dm, **kwargs):
     '''
     for key, value in kwargs.iteritems():
         dm = dm[dm.field(key) == value]
-    return gaussian_filter(nanmean(dm.data.mean, 0), 15)
+    return gaussian_filter(nanmean(dm.data, 0), 15)
     #return dm.data.mean(0)
 
 
