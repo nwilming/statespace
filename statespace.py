@@ -10,6 +10,7 @@ from itertools import product, izip
 from sklearn.decomposition import PCA
 import pylab as plt
 from scipy.ndimage import gaussian_filter
+from scipy.stats import nanmean
 import matplotlib
 from ocupy import datamat
 import patsy
@@ -39,9 +40,12 @@ def patsy_regression_weights(data, formula):
         for t in range(ntime):
             r_tu = unit.data[:, t]
             idx = isnan(r_tu)
-            fit = linear_model.LinearRegression(
+            if not all(idx):
+                fit = linear_model.LinearRegression(
                     fit_intercept=False).fit(regs[~idx,:], r_tu[~idx])
-            coefs.append(fit.coef_)
+                coefs.append(fit.coef_)
+            else:
+                coefs.append(nan*ones((regs.shape[1],)))
         dm.update({'unit': n, 'coef': squeeze(array(coefs))})
     betas_nt = dm.get_dm()
     return betas_nt, regs.design_info.column_names
@@ -91,7 +95,7 @@ def conmean(dm, **kwargs):
     '''
     for key, value in kwargs.iteritems():
         dm = dm[dm.field(key) == value]
-    return gaussian_filter(dm.data.mean(0), 15)
+    return gaussian_filter(nanmean(dm.data.mean, 0), 15)
     #return dm.data.mean(0)
 
 
