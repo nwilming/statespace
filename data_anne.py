@@ -80,14 +80,14 @@ def subjects2datamat(substr, directory):
     return length, widths
 
 def combine_subjects(substr, directory, length, width):
-    files = glob.glob(os.path.join(directory, substr+'*.mat'))
+    files = glob.glob(os.path.join(directory, substr+'*.mat.datamat'))
     print files
     outname = os.path.join(directory, substr + '_combined.dm')
     output_file = h5py.File(outname)
     try:
         offset = 0
         for i, f in enumerate(files):
-            dm = datamat.load(f+'.datamat')
+            dm = datamat.load(f)
             if i == 0:
                 output_file.create_group('datamat')
                 for f in dm.fieldnames():
@@ -136,11 +136,11 @@ def preprocess_data(subject):
     minify_subject(subject+'*cleandata', source_dir, target_dir)
     length, widths = subjects2datamat('%s*cleandata'%subject, 
         os.path.join(target_dir, 'minified'))
-    combine_subjects('%s_cleandata'%subject, os.path.join(target_dir, 'minified'), 
+    combine_subjects('%s'%subject, os.path.join(target_dir, 'minified'), 
         length, min(widths))
 
 
-def analyze_subs(sub, epoche):
+def analyze_subs(sub):
     import statespace as st
     factors = {'response':[-1, 1], 'stim_strength':[-1, 1]}
     valid_conditions = [{'response': -1, 'stim_strength': -1},
@@ -148,23 +148,20 @@ def analyze_subs(sub, epoche):
             {'response': -1, 'stim_strength': 1},
             {'response': 1, 'stim_strength': 1}]
     formula = 'response+stim_strength+1'
-    epochs = {'stimulus1':[0, 460], 'stimulus2':[461, 461+460], 'response': [1+461+460, 461+460+148]}
-    figure()
-    key, value = epoche, epochs[epoche]
-    print sub
-    dm = datamat.load('/run/media/nwilming/dump/Data-Anne/minified/%s_combined.dm'%sub, 'datamat')
-    dm.data = dm.data[:, value[0]:value[1]]
+    dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
     st.zscore(dm)
     Q, Bmax, labels, bnt, D = st.embedd(dm, formula, valid_conditions)
-    leg = st.plot_population_activity(dm, 
+    results = st.get_trajectory(dm, 
         {'response':[-1, 1], 'stim_strength':[-1,1]}, 
-        Q[:, 1], Q[:, 2], epochs=[(0, dm.data.shape[1]-1)])
-    title(key)
+        Q[:, 1], Q[:, 2])
     del dm
-    suptitle(sub)
-    savefig('%s_%s.png'%(sub, epoche))
+    import cPickle
+    cPickle.dump(results, open('%s.trajectory', 'w'))
 
 if __name__ == '__main__':
     import sys
-    subject = sys.argv[1]
-    preprocess_data(subject)
+    task, subject = sys.argv[1:3]
+    if task == 'preprocess':
+        preprocess_data(subject)
+    elif task == 'analyze':
+        analyze_subs(subject)
