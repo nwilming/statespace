@@ -18,7 +18,7 @@ import patsy
 
 def zscore(data):
     for n in unique(data.unit):
-        mu, sigma = data.data[data.unit==n].mean(), data.data[data.unit==n].std()
+        mu, sigma = nanmean(data.data[data.unit==n]), nanstd(data.data[data.unit==n])
         data.data[data.unit==n] = (data.data[data.unit==n]-mu)/sigma
 
 
