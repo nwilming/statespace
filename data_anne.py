@@ -149,6 +149,11 @@ def analyze_subs(sub):
             {'response': 1, 'stim_strength': 1}]
     formula = 'response+stim_strength+1'
     dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
+    # Need to identify no nan starting point
+    a = array([st.conmean(dm, **v) for v in valid_conditions])
+    idend = where(sum(isnan(a),0) > 0)[0][0]
+    dm.data = dm.data[:, 0:idend]
+
     st.zscore(dm)
     Q, Bmax, labels, bnt, D = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
