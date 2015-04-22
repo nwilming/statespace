@@ -17,7 +17,7 @@ import patsy
 
 def zscore(data):
     for n in unique(data.unit):
-        mu, sigma = data.data[data.unit==n].mean(), data.data[data.unit==n].std()
+        mu, sigma = nanmean(data.data[data.unit==n]), nanstd(data.data[data.unit==n])
         data.data[data.unit==n] = (data.data[data.unit==n]-mu)/sigma
 
 
@@ -91,7 +91,7 @@ def conmean(dm, **kwargs):
     '''
     for key, value in kwargs.iteritems():
         dm = dm[dm.field(key) == value]
-    return gaussian_filter(dm.data.mean(0), 15)
+    return gaussian_filter(nanmean(dm.data.mean, 0), 15)
     #return dm.data.mean(0)
 
 
