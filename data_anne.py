@@ -151,9 +151,11 @@ def analyze_subs(sub):
     dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
     # Need to identify no nan starting point
     a = array([st.conmean(dm, **v) for v in valid_conditions])
-    idend = where(sum(isnan(a),0) > 0)[0][0]
-    dm.data = dm.data[:, 0:idend]
-
+    try:
+        idend = where(sum(isnan(a),0) > 0)[0][0]
+        dm.data = dm.data[:, 0:idend]
+    except IndexError:
+        pass
     st.zscore(dm)
     Q, Bmax, labels, bnt, D = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
@@ -161,7 +163,7 @@ def analyze_subs(sub):
         Q[:, 1], Q[:, 2])
     del dm
     import cPickle
-    cPickle.dump(results, open('%s.trajectory', 'w'))
+    cPickle.dump(results, open('%s.trajectory'%sub, 'w'))
 
 if __name__ == '__main__':
     import sys
