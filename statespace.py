@@ -205,7 +205,7 @@ def get_trajectory(data, factors, axis1, axis2):
         assert population_activity.shape[1] == data.data.shape[1]
         vax1 = dot(axis1, population_activity)
         vax2 = dot(axis2, population_activity)
-        results[condition] = (vax1, vax2)
+        results[str(condition)] = (vax1, vax2)
     return results
 
 def plot_population_activity(data, factors, axis1, axis2, 

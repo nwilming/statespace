@@ -245,11 +245,13 @@ def make_2Dplot(df):
 
 def get_conditions(conditions, files, w, condition_mapping):
     dm = datamat.DatamatAccumulator()
+    
     for subject, file in files:        
         data = datamat.load(file, 'datamat')
+        st.zscore(data)
         for cond_nr, cond in enumerate(conditions):                    
-            conmean = st.conmean(data, **cond)[-w:]            
-            trial = {'subject':0*conmean+subject, 
+            conmean = nanmean(st.condition_matrix(data, [cond]), 0)[-w:]            
+            trial = {'subject':0*ones(conmean.shape)+subject, 
                 'condition':array([condition_mapping[str(cond)]]*len(conmean)),
                 'response':conmean,
                 'time':linspace(-len(conmean)/600., 0, len(conmean))}
