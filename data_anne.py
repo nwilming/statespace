@@ -142,7 +142,7 @@ def preprocess_data(subject):
         length, min(widths))
 
 
-def analyze_subs(sub):
+def analyze_subs(sub, channels=None, prefix=''):
     import statespace as st
     factors = {'response':[-1, 1], 'stim_strength':[-1, 1]}
     valid_conditions = [{'response': -1, 'stim_strength': -1},
@@ -151,6 +151,8 @@ def analyze_subs(sub):
             {'response': 1, 'stim_strength': 1}]
     formula = 'response+stim_strength+1'
     dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
+    if channels is not None:
+        dm.data = dm.data[:,channels]
     # Need to identify no nan starting point
     a = array([st.conmean(dm, **v) for v in valid_conditions])
     try:
@@ -167,7 +169,7 @@ def analyze_subs(sub):
     import cPickle
     results.update({'Q':Q, 'Bmax':Bmax, 'labels':labels,
         't_bamx':t_bmax, 'norms':norms, 'maps':maps})
-    cPickle.dump(results, open('%s.trajectory', 'w'))
+    cPickle.dump(results, open('%s%s.trajectory'%(prefix, sub), 'w'))
 
 
 def combine_trajectories(trjs, select_samples=None):
@@ -260,3 +262,15 @@ if __name__ == '__main__':
         preprocess_data(subject)
     elif task == 'analyze':
         analyze_subs(subject)
+    elif task == 'analyze_occ':
+        from scipy.io import loadmat
+        channel_selection = loadmat('sensorselection.mat')['chans'][0,0].flatten()-1
+        analyze_subs(subject, channel_selection, 'occ')
+        analyze_subs(subject)
+    elif task == 'analyze_occ':
+        from scipy.io import loadmat
+        channel_selection = loadmat('sensorselection.mat')['chans'][0,1].flatten()-1
+        analyze_subs(subject, channel_selection, 'motor')
+        analyze_subs(subject)
+
+ 
