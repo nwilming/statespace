@@ -163,15 +163,21 @@ def regression_embedding(bnt, D):
     PCA cleaned space and orthogonalize regression vectors.
     '''
     Bmax = []
+    bmax_list= []
+    norms = []
+    maps = []
     for v in range(bnt.coef.shape[2]):
         b = bnt.coef[:, :, v]
         b = [dot(D, b[:,i]) for i in range(b.shape[1])]
+        maps.append(array(b))
         norm_b = [linalg.norm(bb) for bb in b]
         bmax = b[argmax(norm_b)]
         Bmax.append(bmax)
+        bmax_list.append(where(b == bmax)[0][0])
+        norms.append(norm_b)
     Bmax = array(Bmax).T
     Q, r = linalg.qr(Bmax)
-    return Q, Bmax
+    return Q, Bmax, bmax_list, norms, maps
 
 
 def embedd(data, formula, valid_conditions):
@@ -183,8 +189,8 @@ def embedd(data, formula, valid_conditions):
     X, Xpca, D = pca_cleaning(data, valid_conditions)
     print 'Regression embedding'
     sys.stdout.flush()
-    Q, Bmax = regression_embedding(bnt, D)
-    return Q, Bmax, labels, bnt, D
+    Q, Bmax, t_bmax, norms, maps = regression_embedding(bnt, D)
+    return Q, Bmax, labels, bnt, D, t_bmax, norms, maps
 
 
 def valid_conditions(data, factors):
@@ -205,7 +211,7 @@ def get_trajectory(data, factors, axis1, axis2):
         assert population_activity.shape[1] == data.data.shape[1]
         vax1 = dot(axis1, population_activity)
         vax2 = dot(axis2, population_activity)
-        results[condition] = (vax1, vax2)
+        results[str(condition)] = (vax1, vax2)
     return results
 
 def plot_population_activity(data, factors, axis1, axis2, 

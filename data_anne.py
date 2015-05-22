@@ -156,12 +156,14 @@ def analyze_subs(sub):
     idend = where(sum(isnan(a),0) > 0)[0][0]
     dm.data = dm.data[:, 0:idend]
     st.zscore(dm)
-    Q, Bmax, labels, bnt, D = st.embedd(dm, formula, valid_conditions)
+    Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
         {'response':[-1, 1], 'stim_strength':[-1,1]}, 
         Q[:, 1], Q[:, 2])
     del dm
     import cPickle
+    results.update({'Q':Q, 'Bmax':Bmax, 'labels':labels,
+        't_bamx':t_bmax, 'norms':norms, 'maps':maps})
     cPickle.dump(results, open('%s.trajectory', 'w'))
 
 
@@ -208,36 +210,27 @@ def tolongform(trjs, condition_mapping=None, select_samples=None):
 
 
 axes_labels = ['response', 'stimulus strength']
-def make_1Dplot(df):
-    cnt = 1
-    for response_hand in unique(df.response_hand):
-        for axes in unique(df.encoding_axis):
-            subplot(2,2,cnt)
-            cnt +=1
-            sns.tsplot(df[(df.response_hand==response_hand) & 
-                (df.encoding_axis==axes)], time='time', unit='subject', 
-                value='response', condition='condition')
-            title('Response Hand: %i, Axes: %s'%(response_hand, axes_labels[int(axes)]))
+def make_1Dplot(df, encoding_axes=0):    
+    sns.tsplot(df[df.encoding_axis==encoding_axes], time='time', unit='subject', 
+            value='response', condition='condition')
+    
 
 
 def make_2Dplot(df):
-    subplot(1,2,1)
+    
     colors = sns.color_palette()
     conditions = []
-    for rh in unique(df.response_hand):
-        subplot(1,2,rh+1)
-        leg = []
-        for i, (cond, df_c) in enumerate(df[df.response_hand==rh].groupby('condition', sort=False)):
-            ax1 = df_c[df_c.encoding_axis==0].pivot('subject', 'time', 'response').values
-            ax2 = df_c[df_c.encoding_axis==1].pivot('subject', 'time', 'response').values
-            leg.append(plot(ax1.mean(0), ax2.mean(0), color=colors[i])[0])
-            plot(ax1.mean(0)[0], ax2.mean(0)[0], color=colors[i], marker='o')
-            plot(ax1.mean(0)[-1], ax2.mean(0)[-1], color=colors[i], marker='s')
-            conditions.append(cond)
-        legend(leg, conditions)
-        title('Response hand: %i'%rh)
-        xlabel(axes_labels[0])
-        ylabel(axes_labels[1])
+    leg = []
+    for i, (cond, df_c) in enumerate(df.groupby('condition', sort=False)):
+        ax1 = df_c[df_c.encoding_axis==0].pivot('subject', 'time', 'response').values
+        ax2 = df_c[df_c.encoding_axis==1].pivot('subject', 'time', 'response').values
+        leg.append(plot(ax1.mean(0), ax2.mean(0), color=colors[i])[0])
+        plot(ax1.mean(0)[0], ax2.mean(0)[0], color=colors[i], marker='o')
+        plot(ax1.mean(0)[-1], ax2.mean(0)[-1], color=colors[i], marker='s')
+        conditions.append(cond)
+    legend(leg, conditions)
+    xlabel(axes_labels[0])
+    ylabel(axes_labels[1])
  
 
 def get_conditions(conditions, files, w, condition_mapping):

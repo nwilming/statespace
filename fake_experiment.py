@@ -17,7 +17,7 @@ color_coh = array([-1, 1])
 bfcts = [s for s in spline_base.spline_base1d(100, 10)[0].T]
 
 
-def make_trial(motion, color, choice, context, unit=None):
+def make_trial(motion, color, choice, context, trial, unit=None):
     '''
     Each unit has a template response to motion, color, choice, context.
     The template is a linear combination of gaussian basis functions.
@@ -27,9 +27,9 @@ def make_trial(motion, color, choice, context, unit=None):
     resp = 0*ones((100, ))
     for c_val, weights in zip(conditions, [motion, color, choice, context]):
         resp += c_val*array([r*b for r, b in zip(weights, bfcts)]).sum(0)
-
+    resp = resp*linspace(0,1,len(resp))    
     return {'data': resp + random.randn(len(time)) * (resp.mean() / 5.), 'mc': conditions[0], 'colorc': conditions[1], 'choice': conditions[2],
-            'ctxt': conditions[3], 'unit': unit}
+            'ctxt': conditions[3], 'unit': unit, 'trial':trial}
 
 
 def make_experiment(Ntrials, Nunits):
@@ -40,8 +40,8 @@ def make_experiment(Ntrials, Nunits):
         _ = [
             units.update(
                 make_trial(
-                    *weights,
-                    unit=n)) for _ in range(Ntrials)]
+                    *(weights+[trial]),
+                    unit=n)) for trial in range(Ntrials)]
 
     return units.get_dm()
 
