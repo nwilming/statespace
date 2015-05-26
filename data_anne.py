@@ -152,15 +152,20 @@ def analyze_subs(sub, channels=None, prefix=''):
     formula = 'choice+stim_strength+1'
     dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
     if channels is not None:
-        dm.data = dm.data[:,channels]
+        id_channel = in1d(dm.unit, channels) 
+        dm = dm[id_channel]
+        print dm.data.shape
     # Need to identify no nan starting point
     a = array([st.conmean(dm, **v) for v in valid_conditions])
     try:
         idend = where(sum(isnan(a),0) > 0)[0][0]
+        print idend
+        print dm.data.shape
         dm.data = dm.data[:, 0:idend]
     except IndexError:
         pass
     st.zscore(dm)
+    print dm.data.shape
     Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
         {'choice':[-1, 1], 'stim_strength':[-1,1]}, 
