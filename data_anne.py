@@ -7,7 +7,7 @@ from pylab import *
 import seaborn as sns
 import statespace as st 
 
-conditions = ['stim_strength', 'response', 'choice', 'correct']
+conditions = ['stim_strength', 'choice', 'choice', 'correct']
 
 def simplify_data(filename, output, downsample=True):
     data = h5py.File(filename)
@@ -36,6 +36,7 @@ def simplify_data(filename, output, downsample=True):
         time.append(concatenate(data_t))
         # stim_strength', 'response', 'choice', 'correct'
         c = trialinfo[(3, 5, 6, 7), j]
+        print c[0,1,2]
         conditions.append(c)
     labels = []
     for label in data['data']['label'][:].T:
@@ -144,12 +145,12 @@ def preprocess_data(subject):
 
 def analyze_subs(sub, channels=None, prefix=''):
     import statespace as st
-    factors = {'response':[-1, 1], 'stim_strength':[-1, 1]}
-    valid_conditions = [{'response': -1, 'stim_strength': -1},
-            {'response': 1, 'stim_strength': -1},
-            {'response': -1, 'stim_strength': 1},
-            {'response': 1, 'stim_strength': 1}]
-    formula = 'response+stim_strength+1'
+    factors = {'choice':[-1, 1], 'stim_strength':[-1, 1]}
+    valid_conditions = [{'choice': -1, 'stim_strength': -1},
+            {'choice': 1, 'stim_strength': -1},
+            {'choice': -1, 'stim_strength': 1},
+            {'choice': 1, 'stim_strength': 1}]
+    formula = 'choice+stim_strength+1'
     dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
     if channels is not None:
         dm.data = dm.data[:,channels]
@@ -160,7 +161,7 @@ def analyze_subs(sub, channels=None, prefix=''):
     st.zscore(dm)
     Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
-        {'response':[-1, 1], 'stim_strength':[-1,1]}, 
+        {'choice':[-1, 1], 'stim_strength':[-1,1]}, 
         Q[:, 1], Q[:, 2])
     del dm
     import cPickle
@@ -183,15 +184,14 @@ def combine_trajectories(trjs, select_samples=None):
         dm.update(trajectory)
     return dm.get_dm(), trj.keys()
 
-def tolongform(trjs, condition_mapping=None, select_samples=None):
+def tolongform(trjs, condition_mapping, select_samples=None):
     '''
     trjs is a (subject code, trajectory dict) tuple
     '''
     if select_samples is None:
         select_samples = lambda x: x
-    conditions = trjs[0][1].keys()
-    if condition_mapping is None:
-        condition_mapping = dict((c,c) for c in conditions)
+    conditions = condition_mapping.keys()
+    
     dm = datamat.DatamatAccumulator()
     for cond_nr, cond in enumerate(conditions):
         for subject, trj in trjs:
@@ -200,8 +200,8 @@ def tolongform(trjs, condition_mapping=None, select_samples=None):
             response = concatenate((ax1, ax2))
             axes = concatenate((ax1*0, ax1*0+1))
             trial = {'subject':0*axes+subject, 
-                'condition':array([condition_mapping[cond]]*len(axes)),
-                'response':response,
+                'condition':array([condition_mapping[cond]]*len(axes), dtype='S16'),
+                'choice':response,
                 'encoding_axis':axes,
                 'time':concatenate((linspace(-len(ax1)/600., 0, len(ax1)), 
                     linspace(-len(ax1)/600., 0, len(ax1))))}
@@ -211,11 +211,12 @@ def tolongform(trjs, condition_mapping=None, select_samples=None):
     return dm, conditions
 
 
-axes_labels = ['response', 'stimulus strength']
+
+axes_labels = ['choice', 'stimulus strength']
 def make_1Dplot(df, encoding_axes=0):    
     sns.tsplot(df[df.encoding_axis==encoding_axes], time='time', unit='subject', 
             value='response', condition='condition')
-    
+    axhline(color='k')
 
 
 def make_2Dplot(df):
@@ -230,6 +231,8 @@ def make_2Dplot(df):
         plot(ax1.mean(0)[0], ax2.mean(0)[0], color=colors[i], marker='o')
         plot(ax1.mean(0)[-1], ax2.mean(0)[-1], color=colors[i], marker='s')
         conditions.append(cond)
+    axvline(color='k')
+    axhline(color='k')
     legend(leg, conditions)
     xlabel(axes_labels[0])
     ylabel(axes_labels[1])
@@ -260,12 +263,10 @@ if __name__ == '__main__':
     elif task == 'analyze_occ':
         from scipy.io import loadmat
         channel_selection = loadmat('sensorselection.mat')['chans'][0,0].flatten()-1
-        analyze_subs(subject, channel_selection, 'occ')
-        analyze_subs(subject)
+        analyze_subs(subject, channel_selection, 'occ')        
     elif task == 'analyze_occ':
         from scipy.io import loadmat
         channel_selection = loadmat('sensorselection.mat')['chans'][0,1].flatten()-1
-        analyze_subs(subject, channel_selection, 'motor')
-        analyze_subs(subject)
+        analyze_subs(subject, channel_selection, 'motor')        
 
  
