@@ -7,7 +7,7 @@ from pylab import *
 import seaborn as sns
 import statespace as st 
 
-conditions = ['stim_strength', 'choice', 'choice', 'correct']
+conditions = ['stim_strength', 'response', 'choice', 'correct']
 
 def simplify_data(filename, output, downsample=True):
     data = h5py.File(filename)
@@ -114,6 +114,9 @@ def combine_subjects(substr, directory, length, width):
 
 
 def data2dm(trial_data, trial_conditions, time, labels):
+    '''
+    This function combines data from a matlab file into a datamat.
+    '''
     dm = datamat.AccumulatorFactory()
     idx = array([t.startswith('M') for t in labels])
     trial_data = trial_data[:, :, idx]
@@ -142,14 +145,15 @@ def preprocess_data(subject):
         length, min(widths))
 
 
+
 def analyze_subs(sub, channels=None, prefix=''):
     import statespace as st
-    factors = {'choice':[-1, 1], 'stim_strength':[-1, 1]}
-    valid_conditions = [{'choice': -1, 'stim_strength': -1},
-            {'choice': 1, 'stim_strength': -1},
-            {'choice': -1, 'stim_strength': 1},
-            {'choice': 1, 'stim_strength': 1}]
-    formula = 'choice+stim_strength+1'
+    factors = {'response':[-1, 1], 'stim_strength':[-1, 1]}
+    valid_conditions = [{'response': -1, 'stim_strength': -1},
+            {'response': 1, 'stim_strength': -1},
+            {'response': -1, 'stim_strength': 1},
+            {'response': 1, 'stim_strength': 1}]
+    formula = 'response+stim_strength+1'
     dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
     if channels is not None:
         id_channel = in1d(dm.unit, channels) 
@@ -168,12 +172,13 @@ def analyze_subs(sub, channels=None, prefix=''):
     print dm.data.shape
     Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
-        {'choice':[-1, 1], 'stim_strength':[-1,1]}, 
+        {'response':[-1, 1], 'stim_strength':[-1,1]}, 
         Q[:, 1], Q[:, 2])
     del dm
     import cPickle
     results.update({'Q':Q, 'Bmax':Bmax, 'labels':labels,
-        't_bamx':t_bmax, 'norms':norms, 'maps':maps})
+        't_bamx':t_bmax, 'norms':norms, 'maps':maps,
+        'factors':facotrs, 'valid_conditions':valid_conditions})
     cPickle.dump(results, open('%s%s.trajectory'%(prefix, sub), 'w'))
 
 
@@ -205,12 +210,11 @@ def tolongform(trjs, condition_mapping, select_samples=None):
         for subject, trj in trjs:
             ax1 = select_samples(trj[cond][0])
             ax2 = select_samples(trj[cond][1]) 
-            response = concatenate((ax1, ax2))
+            data = concatenate((ax1, ax2))
             axes = concatenate((ax1*0, ax1*0+1))
             trial = {'subject':0*axes+subject, 
-                #'condition':array([condition_mapping[cond]]*len(axes), dtype='S16'),
-                'condition':array([cond]*len(axes), dtype='S64'),
-                'choice':response,
+                'condition':array([condition_mapping[cond]]*len(axes), dtype='S64'),                
+                'data':data,
                 'encoding_axis':axes,
                 'time':concatenate((linspace(-len(ax1)/600., 0, len(ax1)), 
                     linspace(-len(ax1)/600., 0, len(ax1))))}
@@ -222,21 +226,20 @@ def tolongform(trjs, condition_mapping, select_samples=None):
 
 
 axes_labels = ['choice', 'stimulus strength']
+
 def make_1Dplot(df, encoding_axes=0):    
     sns.tsplot(df[df.encoding_axis==encoding_axes], time='time', unit='subject', 
-            value='choice', condition='condition')
+            value='data', condition='condition')
     axhline(color='k')
 
 
 def make_2Dplot(df):
-    
     colors = sns.color_palette()
     conditions = []
     leg = []
     for i, (cond, df_c) in enumerate(df.groupby('condition', sort=False)):
-        
-        ax1 = df_c[df_c.encoding_axis==0].pivot('subject', 'time', 'choice').values
-        ax2 = df_c[df_c.encoding_axis==1].pivot('subject', 'time', 'choice').values
+        ax1 = df_c[df_c.encoding_axis==0].pivot('subject', 'time', 'data').values
+        ax2 = df_c[df_c.encoding_axis==1].pivot('subject', 'time', 'data').values
         leg.append(plot(ax1.mean(0), ax2.mean(0), color=colors[i])[0])
         plot(ax1.mean(0)[0], ax2.mean(0)[0], color=colors[i], marker='o')
         plot(ax1.mean(0)[-1], ax2.mean(0)[-1], color=colors[i], marker='s')
@@ -250,7 +253,6 @@ def make_2Dplot(df):
 
 def get_conditions(conditions, files, w, condition_mapping):
     dm = datamat.DatamatAccumulator()
-    
     for subject, file in files:        
         data = datamat.load(file, 'datamat')
         st.zscore(data)
@@ -258,7 +260,7 @@ def get_conditions(conditions, files, w, condition_mapping):
             conmean = nanmean(st.condition_matrix(data, [cond]), 0)[-w:]            
             trial = {'subject':0*ones(conmean.shape)+subject, 
                 'condition':array([condition_mapping[str(cond)]]*len(conmean)),
-                'response':conmean,
+                'data':conmean,
                 'time':linspace(-len(conmean)/600., 0, len(conmean))}
             dm.update(datamat.VectorFactory(trial,{}))
     dm = dm.get_dm()
