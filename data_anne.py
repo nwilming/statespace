@@ -193,7 +193,8 @@ def tolongform(trjs, condition_mapping, select_samples=None):
     if select_samples is None:
         select_samples = lambda x: x
     conditions = condition_mapping.keys()
-    
+    print conditions
+    #conditions = trjs[0][1].keys()
     dm = datamat.DatamatAccumulator()
     for cond_nr, cond in enumerate(conditions):
         for subject, trj in trjs:
@@ -202,7 +203,8 @@ def tolongform(trjs, condition_mapping, select_samples=None):
             response = concatenate((ax1, ax2))
             axes = concatenate((ax1*0, ax1*0+1))
             trial = {'subject':0*axes+subject, 
-                'condition':array([condition_mapping[cond]]*len(axes), dtype='S16'),
+                #'condition':array([condition_mapping[cond]]*len(axes), dtype='S16'),
+                'condition':array([cond]*len(axes), dtype='S64'),
                 'choice':response,
                 'encoding_axis':axes,
                 'time':concatenate((linspace(-len(ax1)/600., 0, len(ax1)), 
@@ -217,7 +219,7 @@ def tolongform(trjs, condition_mapping, select_samples=None):
 axes_labels = ['choice', 'stimulus strength']
 def make_1Dplot(df, encoding_axes=0):    
     sns.tsplot(df[df.encoding_axis==encoding_axes], time='time', unit='subject', 
-            value='response', condition='condition')
+            value='choice', condition='condition')
     axhline(color='k')
 
 
@@ -227,8 +229,9 @@ def make_2Dplot(df):
     conditions = []
     leg = []
     for i, (cond, df_c) in enumerate(df.groupby('condition', sort=False)):
-        ax1 = df_c[df_c.encoding_axis==0].pivot('subject', 'time', 'response').values
-        ax2 = df_c[df_c.encoding_axis==1].pivot('subject', 'time', 'response').values
+        
+        ax1 = df_c[df_c.encoding_axis==0].pivot('subject', 'time', 'choice').values
+        ax2 = df_c[df_c.encoding_axis==1].pivot('subject', 'time', 'choice').values
         leg.append(plot(ax1.mean(0), ax2.mean(0), color=colors[i])[0])
         plot(ax1.mean(0)[0], ax2.mean(0)[0], color=colors[i], marker='o')
         plot(ax1.mean(0)[-1], ax2.mean(0)[-1], color=colors[i], marker='s')
