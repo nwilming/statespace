@@ -35,7 +35,8 @@ def simplify_data(filename, output, downsample=True):
         trials.append(concatenate(data_d))
         time.append(concatenate(data_t))
         # stim_strength', 'response', 'choice', 'correct'
-        c = trialinfo[(3, 5, 6, 7), j]
+        c = array(trialinfo[(3, 5, 6, 7), j])
+        print c[[0,1,3]]
         conditions.append(c)
     labels = []
     for label in data['data']['label'][:].T:
@@ -264,12 +265,14 @@ if __name__ == '__main__':
         analyze_subs(subject)
     elif task == 'analyze_occ':
         from scipy.io import loadmat
-        channel_selection = loadmat('sensorselection.mat')['chans'][0,0].flatten()-1
+        channel_selection = loadmat('sensorselection.mat')['chans'][0,0][1].flatten()-1
         analyze_subs(subject, channel_selection, 'occ')
         analyze_subs(subject)
-    elif task == 'analyze_occ':
+    elif task == 'analyze_motor':
         from scipy.io import loadmat
-        channel_selection = loadmat('sensorselection.mat')['chans'][0,1].flatten()-1
+        print loadmat('sensorselection.mat')['chans'][0,1][1].flatten()
+
+        channel_selection = loadmat('sensorselection.mat')['chans'][0,1][1].flatten()-1
         analyze_subs(subject, channel_selection, 'motor')
         analyze_subs(subject)
 
