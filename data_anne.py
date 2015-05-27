@@ -18,7 +18,7 @@ for sub in subjects:
 def get_response_lock(num_samples):
     def response_lock(trial_info, trial_data, trial_time):
         response = trial_info[8].astype(int)
-        data = trial_data[response-num_samples:response]
+        data = trial_data[response-num_samples:response, :]
         time = trial_data[response-num_samples:response]
         # The next line converts the response hand code from [12, 18] to [-1, 1]
         response_hand = (((trial_info[5] - 12)/6) - 0.5) *2        
@@ -44,10 +44,9 @@ def adaptor(subject_files, select_data):
             for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):            
                 td_vals = data[td[0]]
                 tt_vals = data[tt[0]]
-                for unit in range(td_vals.shape[1]):
-                    d = select_data(ti, td_vals[:,unit], tt_vals)
-                    d.update({'subject':subject, 'session':session, 'unit':unit})
-                    trials.update(d)
+                d = select_data(ti, td_vals, tt_vals)
+                d.update({'subject':subject, 'session':session})
+                trials.update(d)
     return trials.get_dm() 
         
 
