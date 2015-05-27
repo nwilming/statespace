@@ -11,19 +11,21 @@ conditions = ['stim_strength', 'response', 'choice', 'correct']
 
 subjects = [12, 13, 15, 16, 17, 10, 9, 8, 2, 3, 6, 7, 4, 5, 20, 21, 14, 19, 18]
 subject_files = {}
-for sub in subs:    
+for sub in subjects:    
     sessions =  glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/Preproc/*cleandata.mat'%sub)
     subject_files[sub] = zip(range(len(sessions)), sessions)
 
 def get_response_lock(num_samples):
     def response_lock(trial_info, trial_data, trial_time):
-        response = trial_info[8]
-        data = trial_data[response-num_samples:response, :]
+        response = trial_info[8].astype(int)
+        data = trial_data[response-num_samples:response]
         time = trial_data[response-num_samples:response]
         # The next line converts the response hand code from [12, 18] to [-1, 1]
         response_hand = (((trial_info[5] - 12)/6) - 0.5) *2        
-        return {'stim_strength':trial_info[3], 'stim_strength':trial_info[6], 'correct':trialinfo[7],
+        return {'stim_strength':trial_info[3], 'stim_strength':trial_info[6], 'correct':trial_info[7],
                 'response_hand':response_hand, 'data':data, 'time':time}
+    return response_lock
+
 
 def adaptor(subject_files, select_data):
     '''
@@ -32,18 +34,21 @@ def adaptor(subject_files, select_data):
     select_data : function that receives trialinfo and trialdata field. It returns
         the data to be used for this trial and a dict containing metadata.
     '''
-    trials = []
-    for subject, (session, filename) in subject_files.iteritems():
-        data = h5py.File(filename)  
-        trialinfo = data['data']['trialinfo'][:,:]        
-        trial_data = data['data']['trial']
-        trial_time = data['data']['time']
-        
-        for j, (td, ti, tt) in enumerate(zip(trial_data, trial_info, trial_time)):            
-            d = select_data(ti, td, tt)
-            d.update({'subject':subject, 'session':session})
-            trials.append(select_data(ti, td, tt))
-    return datamat.VectorFactory(trials, {})  
+    trials = datamat.AccumulatorFactory() 
+    for subject, data in subject_files.iteritems():
+        for session, filename in data:
+            data = h5py.File(filename) 
+            trialinfo = data['data']['trialinfo'][:,:]        
+            trial_data = data['data']['trial']
+            trial_time = data['data']['time']
+            for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):            
+                td_vals = data[td[0]]
+                tt_vals = data[tt[0]]
+                for unit in range(td_vals.shape[1]):
+                    d = select_data(ti, td_vals[:,unit], tt_vals)
+                    d.update({'subject':subject, 'session':session, 'unit':unit})
+                    trials.update(d)
+    return trials.get_dm() 
         
 
 def simplify_data(filename, output, downsample=True):
