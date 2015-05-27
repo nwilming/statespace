@@ -34,22 +34,30 @@ def adaptor(subject_files, select_data):
     select_data : function that receives trialinfo and trialdata field. It returns
         the data to be used for this trial and a dict containing metadata.
     '''
-    trials = datamat.AccumulatorFactory() 
+    dm = datamat.DatamatAccumulator()
     for subject, data in subject_files.iteritems():
         for session, filename in data:
             data = h5py.File(filename) 
+            labels = []
+            for label in data['data']['label'][:].T:
+                labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
+
             trialinfo = data['data']['trialinfo'][:,:]        
             trial_data = data['data']['trial']
             trial_time = data['data']['time']
-            for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):            
-                td_vals = data[td[0]]
-                tt_vals = data[tt[0]]
-                for unit in range(td_vals.shape[1]):
-                    d = select_data(ti, td_vals[:,unit], tt_vals)
-                    d.update({'subject':subject, 'session':session, 'unit':unit})
-                    trials.update(d)
-    return trials.get_dm() 
-        
+            channels = [(i, int(t[1:]) for i, t in labels if t.startswith('M')]
+            
+            for unit, idx in channels:
+                trials = datamat.AccumulatorFactory()
+                for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):            
+                    td_vals = data[td[0]]
+                    tt_vals = data[tt[0]]
+                    d = select_data(ti, td_vals[:,idx], tt_vals)
+                        d.update({'subject':subject, 'session':session, 'unit':unit})
+                        trials.update(d)
+                dm.update(trials.get_dm())
+    return dm.get_dm() 
+
 
 def simplify_data(filename, output, downsample=True):
     data = h5py.File(filename)
