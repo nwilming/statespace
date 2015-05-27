@@ -146,14 +146,14 @@ def preprocess_data(subject):
 
 
 
-def analyze_subs(sub, channels=None, prefix=''):
+def analyze_subs(sub, channels=None, factor='choice', prefix=''):
     import statespace as st
-    factors = {'response':[-1, 1], 'stim_strength':[-1, 1]}
-    valid_conditions = [{'response': -1, 'stim_strength': -1},
-            {'response': 1, 'stim_strength': -1},
-            {'response': -1, 'stim_strength': 1},
-            {'response': 1, 'stim_strength': 1}]
-    formula = 'response+stim_strength+1'
+    factors = {factor:[-1, 1], 'stim_strength':[-1, 1]}
+    valid_conditions = [{factor: -1, 'stim_strength': -1},
+            {factor: 1, 'stim_strength': -1},
+            {factor: -1, 'stim_strength': 1},
+            {factor: 1, 'stim_strength': 1}]
+    formula = 'choice+stim_strength+1'
     dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
     if channels is not None:
         id_channel = in1d(dm.unit, channels) 
@@ -172,14 +172,14 @@ def analyze_subs(sub, channels=None, prefix=''):
     print dm.data.shape
     Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
-        {'response':[-1, 1], 'stim_strength':[-1,1]}, 
+        {factor:[-1, 1], 'stim_strength':[-1,1]}, 
         Q[:, 1], Q[:, 2])
     del dm
     import cPickle
     results.update({'Q':Q, 'Bmax':Bmax, 'labels':labels,
         't_bamx':t_bmax, 'norms':norms, 'maps':maps,
-        'factors':facotrs, 'valid_conditions':valid_conditions})
-    cPickle.dump(results, open('%s%s.trajectory'%(prefix, sub), 'w'))
+        'factors':factors, 'valid_conditions':valid_conditions})
+    cPickle.dump(results, open('%s%s%s.trajectory'%(prefix, sub, factor), 'w'))
 
 
 def combine_trajectories(trjs, select_samples=None):
@@ -225,15 +225,13 @@ def tolongform(trjs, condition_mapping, select_samples=None):
 
 
 
-axes_labels = ['choice', 'stimulus strength']
-
 def make_1Dplot(df, encoding_axes=0):    
     sns.tsplot(df[df.encoding_axis==encoding_axes], time='time', unit='subject', 
             value='data', condition='condition')
     axhline(color='k')
 
 
-def make_2Dplot(df):
+def make_2Dplot(df, axes_labels = ['choice', 'stimulus_strength']):
     colors = sns.color_palette()
     conditions = []
     leg = []
