@@ -9,6 +9,11 @@ import statespace as st
 
 conditions = ['stim_strength', 'response', 'choice', 'correct']
 
+subjects = [12, 13, 15, 16, 17, 10, 9, 8, 2, 3, 6, 7, 4, 5, 20, 21, 14, 19, 18]
+subject_files = {}
+for sub in subs:    
+    sessions =  glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/Preproc/*cleandata.mat'%sub)
+    subject_files[sub] = zip(range(len(sessions)), sessions)
 
 def get_response_lock(num_samples):
     def response_lock(trial_info, trial_data, trial_time):
@@ -20,7 +25,7 @@ def get_response_lock(num_samples):
         return {'stim_strength':trial_info[3], 'stim_strength':trial_info[6], 'correct':trialinfo[7],
                 'response_hand':response_hand, 'data':data, 'time':time}
 
-def adaptor(filenames, select_data):
+def adaptor(subject_files, select_data):
     '''
     Sits on top of a matlab file and returns a datamat to access it.
 
@@ -28,7 +33,7 @@ def adaptor(filenames, select_data):
         the data to be used for this trial and a dict containing metadata.
     '''
     trials = []
-    for subject, session, filename in filenames:
+    for subject, (session, filename) in subject_files.iteritems():
         data = h5py.File(filename)  
         trialinfo = data['data']['trialinfo'][:,:]        
         trial_data = data['data']['trial']

@@ -34,7 +34,7 @@ def patsy_regression_weights(data, formula):
     for n in unique(data.unit):
         sys.stdout.flush()
         unit = data[data.unit == n]
-        datadict = dict((f, unit.field(f)) for f in unit.fieldnames())
+        datadict = dict((f, unit.field(f)) for f gin unit.fieldnames())
         regs = patsy.dmatrix(formula, data=datadict)
         coefs = []
         for t in range(ntime):
@@ -60,33 +60,6 @@ def predict_unit(unit, formula, bnt):
         pred[i, :] = dot(d, coefs.T)
     return pred
 
-def get_regression_weights(data, factors, predicted):
-    '''
-    Regress factors onto predicted variable from data.
-    Return a matrix that contains betas for each unit and timepoint (betas[n,t]
-    and a matrix that contains betas[v,t]. The second version contains
-    vectors of betas for each unit indexed by factor and time.
-    '''
-    nunits, ntime = len(unique(data.unit)), data.data.shape[1]
-
-    betas_nt = nan*ones((nunits, ntime), dtype=object)
-    betas_vt = nan*ones((len(factors)+1, ntime), dtype=object)
-    for n in range(nunits):
-        unit = data[data.unit == n]
-        regs = vstack([unit.field(f) for f in factors])
-        regs = vstack((regs, ones(regs.shape[1])))
-        for t in range(ntime):
-            r_tu = unit.data[:, t]
-            fit = linear_model.LinearRegression(
-                fit_intercept=False).fit(regs.T, r_tu)
-            betas_nt[n, t] = fit.coef_
-            if any(fit.coef_) > 1:
-                print fit.coef, n, t
-    for i in range(len(factors)+1):
-        for t in range(ntime):
-            betas_vt[i, t] = array([betas_nt[n, t][i] for n in range(nunits)])
-    return betas_nt, betas_vt, [f for f in factors] + ['offset']
-
 
 def conmean(dm, **kwargs):
     '''
@@ -96,8 +69,7 @@ def conmean(dm, **kwargs):
     for key, value in kwargs.iteritems():
         dm = dm[dm.field(key) == value]
     return gaussian_filter(nanmean(dm.data, 0), 15)
-    #return dm.data.mean(0)
-
+    
 
 def dict_product(dicts):
     '''
@@ -181,10 +153,17 @@ def regression_embedding(bnt, D):
 
 
 def embedd(data, formula, valid_conditions):
+    '''
+    Statespace analysis wrapper function. Use this function for your analysis.
+
+    Input:
+    data: ocupy.datamat
+
+    '''
     print 'Getting regression weights'
     sys.stdout.flush()
     bnt, labels = patsy_regression_weights(data, formula)
-    print 'Doind PCA cleaning'
+    print 'Doing PCA cleaning'
     sys.stdout.flush()
     X, Xpca, D = pca_cleaning(data, valid_conditions)
     print 'Regression embedding'
