@@ -9,13 +9,14 @@ import statespace as st
 
 def analyze_subs(sub, channels=None, prefix=''):
     import statespace as st
-    factors = {'response':[-1, 1], 'stim_strength':[-1, 1]}
-    valid_conditions = [{'response': -1, 'stim_strength': -1},
-            {'response': 1, 'stim_strength': -1},
-            {'response': -1, 'stim_strength': 1},
-            {'response': 1, 'stim_strength': 1}]
-    formula = 'response+stim_strength+1'
-    dm = datamat.load('/home/nwilming/data/anne_meg/minified/%s_combined.dm'%sub, 'datamat')
+    factors = {'response_hand':[-1, 1], 'stim_strength':[-1, 1]}
+    valid_conditions = [{'response_hand': -1, 'stim_strength': -1},
+            {'response_hand': 1, 'stim_strength': -1},
+            {'response_hand': -1, 'stim_strength': 1},
+            {'response_hand': 1, 'stim_strength': 1}]
+    formula = 'response_hand+stim_strength+1'
+    dm = datamat.load('P%02i.datamat'%sub, 'Datamat')
+    print dm
     if channels is not None:
         dm.data = dm.data[:,channels]
     # Need to identify no nan starting point
@@ -28,13 +29,13 @@ def analyze_subs(sub, channels=None, prefix=''):
     st.zscore(dm)
     Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
-        {'response':[-1, 1], 'stim_strength':[-1,1]}, 
+        {'response_hand':[-1, 1], 'stim_strength':[-1,1]}, 
         Q[:, 1], Q[:, 2])
     del dm
     import cPickle
     results.update({'Q':Q, 'Bmax':Bmax, 'labels':labels,
         't_bamx':t_bmax, 'norms':norms, 'maps':maps,
-        'factors':facotrs, 'valid_conditions':valid_conditions})
+        'factors':factors, 'valid_conditions':valid_conditions})
     cPickle.dump(results, open('%s%s.trajectory'%(prefix, sub), 'w'))
 
 
@@ -76,7 +77,7 @@ def tolongform(trjs, condition_mapping, select_samples=None):
                     linspace(-len(ax1)/600., 0, len(ax1))))}
             dm.update(datamat.VectorFactory(trial,{}))
     dm = dm.get_dm()
-    dm.add_field('response_hand', mod(dm.subject,2)==0)
+    dm.add_field('used_hand', mod(dm.subject,2)==0)
     return dm, conditions
 
 
@@ -120,15 +121,14 @@ def get_conditions(conditions, files, w, condition_mapping):
                 'time':linspace(-len(conmean)/600., 0, len(conmean))}
             dm.update(datamat.VectorFactory(trial,{}))
     dm = dm.get_dm()
-    dm.add_field('response_hand', mod(dm.subject,2)==0)   
+    dm.add_field('used_hand', mod(dm.subject,2)==0)   
     return dm
 
 if __name__ == '__main__':
     import sys
     task, subject = sys.argv[1:3]
-    if task == 'preprocess':
-        preprocess_data(subject)
-    elif task == 'analyze':
+    subject = int(subject)
+    if task == 'analyze':
         analyze_subs(subject)
     elif task == 'analyze_occ':
         from scipy.io import loadmat

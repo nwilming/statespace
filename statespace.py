@@ -25,16 +25,13 @@ def zscore(data):
 def patsy_regression_weights(data, formula):
     '''
     Regress factors onto predicted variable from data.
-    Return a matrix that contains betas for each unit and timepoint (betas[n,t]
-    and a matrix that contains betas[v,t]. The second version contains
-    vectors of betas for each unit indexed by factor and time.
     '''
     nunits, ntime = len(unique(data.unit)), data.data.shape[1]
     dm = datamat.AccumulatorFactory()
     for n in unique(data.unit):
         sys.stdout.flush()
         unit = data[data.unit == n]
-        datadict = dict((f, unit.field(f)) for f gin unit.fieldnames())
+        datadict = dict((f, unit.field(f)) for f in unit.fieldnames())
         regs = patsy.dmatrix(formula, data=datadict)
         coefs = []
         for t in range(ntime):
@@ -46,6 +43,7 @@ def patsy_regression_weights(data, formula):
                 coefs.append(fit.coef_)
             else:
                 coefs.append(nan*ones((regs.shape[1],)))
+            print n
         dm.update({'unit': n, 'coef': squeeze(array(coefs))})
     betas_nt = dm.get_dm()
     return betas_nt, regs.design_info.column_names
@@ -160,6 +158,7 @@ def embedd(data, formula, valid_conditions):
     data: ocupy.datamat
 
     '''
+    print valid_conditions
     print 'Getting regression weights'
     sys.stdout.flush()
     bnt, labels = patsy_regression_weights(data, formula)
@@ -168,7 +167,11 @@ def embedd(data, formula, valid_conditions):
     X, Xpca, D = pca_cleaning(data, valid_conditions)
     print 'Regression embedding'
     sys.stdout.flush()
+    print bnt
     Q, Bmax, t_bmax, norms, maps = regression_embedding(bnt, D)
+    print formula
+    print Q
+    print Q.shape
     return Q, Bmax, labels, bnt, D, t_bmax, norms, maps
 
 
