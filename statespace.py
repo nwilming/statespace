@@ -157,7 +157,6 @@ def embedd(data, formula, valid_conditions):
     data: ocupy.datamat
 
     '''
-    print valid_conditions
     print 'Getting regression weights'
     sys.stdout.flush()
     bnt, labels = patsy_regression_weights(data, formula)
@@ -167,7 +166,6 @@ def embedd(data, formula, valid_conditions):
     print 'Regression embedding'
     sys.stdout.flush()
     Q, Bmax, t_bmax, norms, maps = regression_embedding(bnt, D)
-    
     return Q, Bmax, labels, bnt, D, t_bmax, norms, maps
 
 
@@ -181,9 +179,8 @@ def valid_conditions(data, factors):
     return conditions
 
 
-def get_trajectory(data, factors, axis1, axis2):
+def get_trajectory(data, conditions, axis1, axis2):
     results = {}    
-    conditions = list(dict_product(factors))
     for i, condition in enumerate(conditions):
         population_activity = condition_matrix(data, [condition])
         assert population_activity.shape[1] == data.data.shape[1]
