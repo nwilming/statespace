@@ -59,6 +59,41 @@ def adaptor(subject_files, select_data):
                 sys.stdout.flush()
     return trials, channels
 
+
+def tfr_adaptor(subject_files, select_data, struct='freq'):
+    '''
+    Sits on top of a matlab file and returns a datamat to access it.
+
+    select_data : function that receives trialinfo and trialdata field. It returns
+        the data to be used for this trial and a dict containing metadata.
+    '''
+    trials = []
+    for subject, data in subject_files.iteritems():
+        for session, filename in data:
+            data = h5py.File(filename)
+            labels = []
+            for label in data[struct]['label'][:].T:
+                labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
+            trialinfo = data[struct]['trialinfo'][:,:]        
+            trial_data = data[struct]['powspctrm']
+            trial_time = data[struct]['time']
+            frequencies = data[struct]['freq']
+            channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
+            for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):            
+                # td should now be a three dimensional matrix:
+                # sensors x frequency x time
+                td_vals = data[td[0]]
+                tt_vals = data[tt[0]]
+                for i, freq in enumerate(frequencies):
+                    
+                    d = select_data(ti, td_vals[:,j,:], tt_vals, channels)
+                    d.update({'subject':array([subject])[0], 'session':array([session])[0], 'freq':freq})
+                    trials.append(d)
+                sys.stdout.flush()
+    return trials, channels
+
+
+
 def tolongform(trials, channels):
     ### Now convert to long form.
     length = len(channels)*len(trials)
