@@ -11,10 +11,14 @@ conditions = ['stim_strength', 'response', 'choice', 'correct']
 
 subjects = [12, 13, 15, 16, 17, 10, 9, 8, 2, 3, 6, 7, 4, 5, 20, 21, 14, 19, 18]
 subject_files = {}
+tfr_files = {}
 for sub in subjects:    
     sessions =  glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/Preproc/*cleandata.mat'%sub)
     subject_files[sub] = zip(range(len(sessions)), sessions)
+    sessions = glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/TFR/*fb_all_freq.mat'%sub)
+    tfr_files[sub] = zip(range(len(sessions)), sessions)
 
+    
 def get_response_lock(num_samples):
     def response_lock(trial_info, trial_data, trial_time, units):
         response = trial_info[8].astype(int)
