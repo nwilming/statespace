@@ -9,12 +9,15 @@ import statespace as st
 
 def analyze_subs(sub, channels=None, prefix=''):
     import statespace as st
-    factors = {'response_hand':[-1, 1], 'stim_strength':[-1, 1]}
-    valid_conditions = [{'response_hand': -1, 'stim_strength': -1},
-            {'response_hand': 1, 'stim_strength': -1},
-            {'response_hand': -1, 'stim_strength': 1},
-            {'response_hand': 1, 'stim_strength': 1}]
-    formula = 'response_hand+stim_strength+1'
+    factors = {'choice':[-1, 1], 'stim_strength':[-1, 1]}
+    #valid_conditions = [{'choice': -1, 'stim_strength': -1},
+    #        {'choice': 1, 'stim_strength': -1},
+    #        {'choice': -1, 'stim_strength': 1},
+    #        {'choice': 1, 'stim_strength': 1}]
+    valid_conditions = [{'choice': -1},
+            {'choice': 1}, {'stim_strength':1}, {'stim_strength':-1}]
+ 
+    formula = 'choice+stim_strength+C(session)+1'
     dm = datamat.load('P%02i.datamat'%sub, 'Datamat')
     print dm
     if channels is not None:
@@ -29,14 +32,14 @@ def analyze_subs(sub, channels=None, prefix=''):
     st.zscore(dm)
     Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
     results = st.get_trajectory(dm, 
-        {'response_hand':[-1, 1], 'stim_strength':[-1,1]}, 
+        valid_conditions,
         Q[:, 1], Q[:, 2])
     del dm
     import cPickle
     results.update({'Q':Q, 'Bmax':Bmax, 'labels':labels,
         't_bamx':t_bmax, 'norms':norms, 'maps':maps,
         'factors':factors, 'valid_conditions':valid_conditions})
-    cPickle.dump(results, open('%s%s.trajectory'%(prefix, sub), 'w'))
+    cPickle.dump(results, open('choice_blocked_%s%s.trajectory'%(prefix, sub), 'w'))
 
 
 def combine_trajectories(trjs, select_samples=None):
@@ -111,7 +114,7 @@ def make_2Dplot(df):
 def get_conditions(conditions, files, w, condition_mapping):
     dm = datamat.DatamatAccumulator()
     for subject, file in files:        
-        data = datamat.load(file, 'datamat')
+        data = datamat.load(file, 'Datamat')
         st.zscore(data)
         for cond_nr, cond in enumerate(conditions):                    
             conmean = nanmean(st.condition_matrix(data, [cond]), 0)[-w:]            
