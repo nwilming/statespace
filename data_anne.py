@@ -123,8 +123,16 @@ def tolongform(trials, channels):
     return datamat.VectorFactory(dm, {})
 
 if __name__ == '__main__':
-    sub = int(sys.argv[1])
-    files = {sub:subject_files[sub]}
-    trials, channels = adaptor(files, get_response_lock(650))
-    dm = tolongform(trials, channels)
-    dm.save('P%02i.datamat'%sub)
+    task = sys.argv[1]
+    sub = int(sys.argv[2])
+    if task == 'pre':
+        files = {sub:subject_files[sub]}
+        trials, channels = adaptor(files, get_response_lock(650))
+        dm = tolongform(trials, channels)
+        dm.save('P%02i.datamat'%sub)
+    elif task == 'tfr':
+        files = {sub:subject_files[sub]}
+        trials, channels = tfr_adaptor(files, get_tfr_response_lock())
+        dm = tolongform(trials, channels)
+        dm.save('P%02i_tfr.datamat'%sub)
+
