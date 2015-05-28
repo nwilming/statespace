@@ -18,12 +18,12 @@ for sub in subjects:
     sessions = glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/TFR/*fb_all_freq.mat'%sub)
     tfr_files[sub] = zip(range(len(sessions)), sessions)
 
-    
+
 def get_response_lock(num_samples):
     def response_lock(trial_info, trial_data, trial_time, units):
         response = trial_info[8].astype(int)
         data = trial_data[response-num_samples:response, :]
-        time = trial_data[response-num_samples:response, 0]
+        time = trial_time[response-num_samples:response, 0]
         # The next line converts the response hand code from [12, 18] to [-1, 1]
         response_hand = (((trial_info[5] - 12)/6) - 0.5) *2        
         trial = {'stim_strength':trial_info[3], 'choice':trial_info[6], 'correct':trial_info[7],
@@ -34,6 +34,18 @@ def get_response_lock(num_samples):
 
     return response_lock
 
+def get_tfr_response_lock():
+    def response_lock(trial_info, trial_data, trial_time, units):        
+        data = trial_data
+        time = trial_time
+        # The next line converts the response hand code from [12, 18] to [-1, 1]
+        response_hand = (((trial_info[5] - 12)/6) - 0.5) *2        
+        trial = {'stim_strength':trial_info[3], 'choice':trial_info[6], 'correct':trial_info[7],
+                'response_hand':response_hand, 'time':time}
+        for idx, unit in units:
+            trial[unit] = data[:,idx]
+        return trial
+    return response_lock
 
 def adaptor(subject_files, select_data):
     '''
@@ -74,6 +86,7 @@ def tfr_adaptor(subject_files, select_data, struct='freq'):
     trials = []
     for subject, data in subject_files.iteritems():
         for session, filename in data:
+            print filename
             data = h5py.File(filename)
             labels = []
             for label in data[struct]['label'][:].T:
@@ -83,14 +96,12 @@ def tfr_adaptor(subject_files, select_data, struct='freq'):
             trial_time = data[struct]['time']
             frequencies = data[struct]['freq']
             channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
-            for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):            
-                # td should now be a three dimensional matrix:
-                # sensors x frequency x time
-                td_vals = data[td[0]]
-                tt_vals = data[tt[0]]
-                for i, freq in enumerate(frequencies):
-                    
-                    d = select_data(ti, td_vals[:,j,:], tt_vals, channels)
+            # trial_data is a four dimensional matrix:            
+            # time x frequency x sensors x trial
+            for trial_num in range(trial_data.shape[3]):
+                for i, freq in enumerate(frequencies):                            
+                    d = select_data(trialinfo[:, trial_num],
+                                    trial_data[:, i, :, trial_num], trial_time[:].flatten(), channels)
                     d.update({'subject':array([subject])[0], 'session':array([session])[0], 'freq':freq})
                     trials.append(d)
                 sys.stdout.flush()
