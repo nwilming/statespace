@@ -14,7 +14,7 @@ def analyze_subs(sub, channels=None, prefix=''):
             {'response_hand': 1, 'stim_strength': -1},
             {'response_hand': -1, 'stim_strength': 1},
             {'response_hand': 1, 'stim_strength': 1}]
-    formula = 'response_hand+stim_strength+1'
+    formula = 'response_hand+stim_strength+C(block)+1'
     dm = datamat.load('P%02i.datamat'%sub, 'Datamat')
     print dm
     if channels is not None:
@@ -67,9 +67,10 @@ def tolongform(trjs, condition_mapping, select_samples=None):
         for subject, filename, trj in trjs:
             ax1 = select_samples(trj[cond][0])
             ax2 = select_samples(trj[cond][1]) 
+            ax1label, ax2label = trj['labels'][1:]
             data = concatenate((ax1, ax2))
-            axes = concatenate((ax1*0, ax1*0+1))
-            trial = {'subject':0*axes+subject, 
+            axes = concatenate(([ax1label]*len(ax1), [ax2label]*len(ax1)))
+            trial = {'subject':0*data+subject, 
                 'condition':array([condition_mapping[cond]]*len(axes), dtype='S64'),                
                 'data':data,
                 'encoding_axis':axes,
@@ -82,11 +83,12 @@ def tolongform(trjs, condition_mapping, select_samples=None):
 
 
 
-axes_labels = ['choice', 'stimulus strength']
+axes_labels = ['response', 'stimulus strength']
 
 def make_1Dplot(df, encoding_axes=0):    
     sns.tsplot(df[df.encoding_axis==encoding_axes], time='time', unit='subject', 
             value='data', condition='condition')
+    ylabel(encoding_axes)
     axhline(color='k')
 
 
@@ -94,24 +96,25 @@ def make_2Dplot(df):
     colors = sns.color_palette()
     conditions = []
     leg = []
-    for i, (cond, df_c) in enumerate(df.groupby('condition', sort=False)):
-        ax1 = df_c[df_c.encoding_axis==0].pivot('subject', 'time', 'data').values
-        ax2 = df_c[df_c.encoding_axis==1].pivot('subject', 'time', 'data').values
-        leg.append(plot(ax1.mean(0), ax2.mean(0), color=colors[i])[0])
-        plot(ax1.mean(0)[0], ax2.mean(0)[0], color=colors[i], marker='o')
-        plot(ax1.mean(0)[-1], ax2.mean(0)[-1], color=colors[i], marker='s')
+    ax1label, ax2label = unique(df.encoding_axis)
+    for i, (cond, df_c) in enumerate(df.groupby('condition', sort=False)):        
+        ax1 = df_c[df_c.encoding_axis==ax1label].pivot('subject', 'time', 'data').values
+        ax2 = df_c[df_c.encoding_axis==ax2label].pivot('subject', 'time', 'data').values        
+        plot(ax1.mean(0), ax2.mean(0), color=colors[i])
+        plot(ax1.mean(0)[0], ax2.mean(0)[0], color=colors[i], marker='s')
+        plot(ax1.mean(0)[-1], ax2.mean(0)[-1], color=colors[i], marker='>')
         conditions.append(cond)
     axvline(color='k')
     axhline(color='k')
     legend(leg, conditions)
-    xlabel(axes_labels[0])
-    ylabel(axes_labels[1])
+    xlabel(ax1label)
+    ylabel(ax2label)
  
 
 def get_conditions(conditions, files, w, condition_mapping):
     dm = datamat.DatamatAccumulator()
     for subject, file in files:        
-        data = datamat.load(file, 'datamat')
+        data = datamat.load(file, 'Datamat')
         st.zscore(data)
         for cond_nr, cond in enumerate(conditions):                    
             conmean = nanmean(st.condition_matrix(data, [cond]), 0)[-w:]            

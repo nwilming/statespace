@@ -43,7 +43,6 @@ def patsy_regression_weights(data, formula):
                 coefs.append(fit.coef_)
             else:
                 coefs.append(nan*ones((regs.shape[1],)))
-            print n
         dm.update({'unit': n, 'coef': squeeze(array(coefs))})
     betas_nt = dm.get_dm()
     return betas_nt, regs.design_info.column_names
@@ -167,11 +166,8 @@ def embedd(data, formula, valid_conditions):
     X, Xpca, D = pca_cleaning(data, valid_conditions)
     print 'Regression embedding'
     sys.stdout.flush()
-    print bnt
     Q, Bmax, t_bmax, norms, maps = regression_embedding(bnt, D)
-    print formula
-    print Q
-    print Q.shape
+    
     return Q, Bmax, labels, bnt, D, t_bmax, norms, maps
 
 
@@ -204,7 +200,6 @@ def plot_population_activity(data, factors, axis1, axis2,
     symbols = ['-', '--', '-.', ':']
     leg = []
     for i, condition in enumerate(conditions):
-        print condition
         population_activity = condition_matrix(data, [condition])
         assert population_activity.shape[1] == data.data.shape[1]
         vax1 = dot(axis1, population_activity)
