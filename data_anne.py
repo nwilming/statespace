@@ -76,7 +76,7 @@ def adaptor(subject_files, select_data):
     return trials, channels
 
 
-def tfr_adaptor(subject_files, select_data, struct='freq'):
+def tfr_adaptor(subject_files, select_data, freq=None, struct='freq'):
     '''
     Sits on top of a matlab file and returns a datamat to access it.
 
@@ -84,6 +84,7 @@ def tfr_adaptor(subject_files, select_data, struct='freq'):
         the data to be used for this trial and a dict containing metadata.
     '''
     trials = []
+    trial_id = 0
     for subject, data in subject_files.iteritems():
         for session, filename in data:
             print filename
@@ -95,16 +96,22 @@ def tfr_adaptor(subject_files, select_data, struct='freq'):
             trial_data = data[struct]['powspctrm']
             trial_time = data[struct]['time']
             frequencies = data[struct]['freq']
+            
             channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
             # trial_data is a four dimensional matrix:            
             # time x frequency x sensors x trial
             for trial_num in range(trial_data.shape[3]):
-                for i, freq in enumerate(frequencies):                            
+                if freq is None:
+                    freq = zip(frequencies, frequencies)
+                for i, (low, high) in enumerate(freq):
+                    idx = (low<=frequencies) & (frequencies<=high)
                     d = select_data(trialinfo[:, trial_num],
-                                    trial_data[:, i, :, trial_num], trial_time[:].flatten(), channels)
-                    d.update({'subject':array([subject])[0], 'session':array([session])[0], 'freq':freq})
+                                    trial_data[:, idx, :, trial_num], trial_time[:].flatten(), channels)
+                    d.update({'trial_id':array([trial_id])[0], 'subject':array([subject])[0], 'session':array([session])[0], 'freq':array([mean([low, high])])[0]})
                     trials.append(d)
+                    trial_id += 1 
                 sys.stdout.flush()
+                    
     return trials, channels
 
 
@@ -117,6 +124,7 @@ def tolongform(trials, channels):
     fields = set(trials[0].keys()) - set([c[1] for c in channels]) - set(['time'])
     dm = {}
     for field in fields:
+        print field, trials[0][field]
         dm[field] = empty((length,), dtype=trials[0][field].dtype)
     dm['data'] = nan*empty((length, width))
     dm['unit'] = empty((length,), dtype='S16')
@@ -142,8 +150,8 @@ if __name__ == '__main__':
         dm = tolongform(trials, channels)
         dm.save('P%02i.datamat'%sub)
     elif task == 'tfr':
-        files = {sub:subject_files[sub]}
-        trials, channels = tfr_adaptor(files, get_tfr_response_lock())
+        files = {sub:tfr_files[sub]}
+        trials, channels = tfr_adaptor(files, get_tfr_response_lock(), freq=[(0, 12), (13, 40)])
         dm = tolongform(trials, channels)
         dm.save('P%02i_tfr.datamat'%sub)
 

@@ -7,7 +7,7 @@ from pylab import *
 import seaborn as sns
 import statespace as st 
 
-def analyze_subs(sub, channels=None, prefix=''):
+def analyze_subs(sub, channels=None, prefix='', freq=None):
     import statespace as st
     factors = {'choice':[-1, 1], 'stim_strength':[-1, 1]}
     #valid_conditions = [{'choice': -1, 'stim_strength': -1},
@@ -18,8 +18,10 @@ def analyze_subs(sub, channels=None, prefix=''):
             {'choice': 1}, {'stim_strength':1}, {'stim_strength':-1}]
  
     formula = 'choice+stim_strength+C(session)+1'
-    dm = datamat.load('P%02i.datamat'%sub, 'Datamat')
+    dm = datamat.load('P%02i_tfr.datamat'%sub, 'Datamat')
     print dm
+    if freq is not None:
+        dm = dm[dm.freq==freq]
     if channels is not None:
         dm.data = dm.data[:,channels]
     # Need to identify no nan starting point
@@ -132,10 +134,13 @@ def get_conditions(conditions, files, w, condition_mapping):
 
 if __name__ == '__main__':
     import sys
+    freq = None
     task, subject = sys.argv[1:3]
+    if len(sys.argv) == 4:
+        freq = float(sys.argv[3])
     subject = int(subject)
     if task == 'analyze':
-        analyze_subs(subject)
+        analyze_subs(subject, freq=freq)
     elif task == 'analyze_occ':
         from scipy.io import loadmat
         channel_selection = loadmat('sensorselection.mat')['chans'][0,0][1].flatten()-1
