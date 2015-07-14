@@ -68,7 +68,7 @@ def conmean(dm, **kwargs):
     if len(dm) == 0:
         raise RuntimeError('No data for ' + str(kwargs))
     return gaussian_filter(nanmean(dm.data, 0), 2)
-    
+
 
 def dict_product(dicts):
     '''
@@ -87,6 +87,9 @@ def condition_matrix(data, conditions):
     '''
     Computes data matrix X which contains one row per unit and colums
     contain the concatenated condition averages for this unit.
+
+    conditions is a list of dictionaries with key:value pairs that determine
+    how to filter the data for each condition.
     '''
     X = []
     for n in unique(data.unit):
@@ -109,7 +112,7 @@ def check_factors(data, factors):
 def pca_cleaning(data, factors):
     '''
     Performs PCA based data cleaning on the population responses.
-    
+
     Important: factors is now a list of valid condition dictionaries
     '''
     X = condition_matrix(data, factors)
@@ -130,7 +133,7 @@ def pca_cleaning(data, factors):
 
 def regression_embedding(bnt, D):
     '''
-    Find maximum norm regresion coefficients over time, project this into 
+    Find maximum norm regresion coefficients over time, project this into
     PCA cleaned space and orthogonalize regression vectors.
     '''
     Bmax = []
@@ -181,18 +184,22 @@ def valid_conditions(data, factors):
     return conditions
 
 
-def get_trajectory(data, conditions, axis1, axis2):
-    results = {}    
+def get_trajectory(data, conditions, axis1, axis2, time=None):
+    '''
+    Project a condition into the state space.
+    '''
+    results = {}
     for i, condition in enumerate(conditions):
-        
         population_activity = condition_matrix(data, [condition])
         assert population_activity.shape[1] == data.data.shape[1]
         vax1 = dot(axis1, population_activity)
         vax2 = dot(axis2, population_activity)
-        results[str(condition)] = (vax1, vax2)
+        if time is None:
+            time = arange(len(vax1))
+        results[str(condition)] = (vax1, vax2, time)
     return results
 
-def plot_population_activity(data, factors, axis1, axis2, 
+def plot_population_activity(data, factors, axis1, axis2,
         legend=False, epochs=None):
     import seaborn as sns
     conditions = list(dict_product(factors))
@@ -210,8 +217,8 @@ def plot_population_activity(data, factors, axis1, axis2,
             plt.plot(vax1[-1], vax2[-1], 'D', color=colors[i])
         else:
             for j, (low, high) in enumerate(epochs):
-                h = plt.plot(vax1[low:high], 
-                        vax2[low:high], ls=symbols[j%len(symbols)], 
+                h = plt.plot(vax1[low:high],
+                        vax2[low:high], ls=symbols[j%len(symbols)],
                         color=colors[i])[0]
                 plt.plot(vax1[low], vax2[low], 'o', color=colors[i])
                 plt.plot(vax1[high], vax2[high], 'D', color=colors[i])
@@ -219,7 +226,7 @@ def plot_population_activity(data, factors, axis1, axis2,
         leg.append((h, str(condition)))
     if legend:
         plt.legend([l[0] for l in leg], [l[1] for l in leg])
-    return [l[0] for l in leg], [l[1] for l in leg] 
+    return [l[0] for l in leg], [l[1] for l in leg]
 
 
 def trellis_plot(data, Q, labels, condition, Bmax=None):
@@ -283,7 +290,3 @@ def characterize_population(data, bnt, factors, Q):
         bs = [bnt[unit, t] for t in range(bnt.shape[1])]
         plt.plot(array(bs)[:, (0,2)])
         plt.legend(factors.keys())
-
-
-
-
