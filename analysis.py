@@ -7,25 +7,29 @@ from pylab import *
 import seaborn as sns
 import statespace as st 
 
-def analyze_subs(sub, channels=None, prefix=''):
+def analyze_subs(input, output, channels=None, freq=None):
     import statespace as st
     factors = {'choice':[-1, 1], 'stim_strength':[-1, 1]}
-    #valid_conditions = [{'choice': -1, 'stim_strength': -1},
-    #        {'choice': 1, 'stim_strength': -1},
-    #        {'choice': -1, 'stim_strength': 1},
-    #        {'choice': 1, 'stim_strength': 1}]
-    valid_conditions = [{'choice': -1},
-            {'choice': 1}, {'stim_strength':1}, {'stim_strength':-1}]
+    valid_conditions = [{'choice': -1, 'stim_strength': -1},
+            {'choice': 1, 'stim_strength': -1},
+           {'choice': -1, 'stim_strength': 1},
+            {'choice': 1, 'stim_strength': 1}]
+    #valid_conditions = [{'choice': -1},
+    #        {'choice': 1}, {'stim_strength':1}, {'stim_strength':-1}]
  
-    formula = 'choice+stim_strength+C(session)+1'
-    dm = datamat.load('P%02i.datamat'%sub, 'Datamat')
-    print dm
+    formula = 'choice+stim_strength+1'
+    dm = datamat.load(input, 'Datamat')
+    if freq is not None:
+        if not freq in unique(dm.freq):
+            raise RuntimeError('Selected frequency not in data. Available frequencies: ' + str(unique(dm.freq)))
+        dm = dm[dm.freq==freq]
     if channels is not None:
         dm.data = dm.data[:,channels]
     # Need to identify no nan starting point
     a = array([st.conmean(dm, **v) for v in valid_conditions])
     try:
         idend = where(sum(isnan(a),0) > 0)[0][0]
+        print 'The no nan end point is:', idend
         dm.data = dm.data[:, 0:idend]
     except IndexError:
         pass
@@ -39,7 +43,7 @@ def analyze_subs(sub, channels=None, prefix=''):
     results.update({'Q':Q, 'Bmax':Bmax, 'labels':labels,
         't_bamx':t_bmax, 'norms':norms, 'maps':maps,
         'factors':factors, 'valid_conditions':valid_conditions})
-    cPickle.dump(results, open('choice_blocked_%s%s.trajectory'%(prefix, sub), 'w'))
+    cPickle.dump(results, open(output, 'w'))
 
 
 def combine_trajectories(trjs, select_samples=None):
@@ -147,18 +151,48 @@ def get_conditions(conditions, files, w, condition_mapping):
     return dm
 
 if __name__ == '__main__':
-    import sys
-    task, subject = sys.argv[1:3]
-    subject = int(subject)
-    if task == 'analyze':
-        analyze_subs(subject)
-    elif task == 'analyze_occ':
+    
+    import sys, glob, os
+    from optparse import OptionParser
+    parser = OptionParser('python analze.py [-f] [-s] input output_trajectory')
+    parser.add_option('--data-dir', dest='data_dir', default='data/')
+    parser.add_option('--glob-str', dest='glob_string', default='P%02i_*freq.dm',
+            help='Search pattern for globbing for subject data.')
+    parser.add_option('-s', '--sensors', dest='sensor_selection', default=None, 
+            help='Restrict to a set of sensors. Valid values are "occ" and "motor"')
+    parser.add_option('-f', '--freq', dest='frequency', type=float, default=None, 
+            help='Choose a frequency to analyze if you use tfr data.')
+    parser.add_option('--dry-run', dest='dry_run', action='store_true', default=False)
+    (options, args) = parser.parse_args()
+    subject = int(args[0])
+    channel_selection = None
+    if options.sensor_selection == 'occ':
         from scipy.io import loadmat
         channel_selection = loadmat('sensorselection.mat')['chans'][0,0][1].flatten()-1
-        analyze_subs(subject, channel_selection, 'occ')
-    elif task == 'analyze_motor':
+    elif options.sensor_selection == 'motor':
         from scipy.io import loadmat
         channel_selection = loadmat('sensorselection.mat')['chans'][0,1][1].flatten()-1
-        analyze_subs(subject, channel_selection, 'motor')
+    else:
+        if options.sensor_selection is not None:
+            raise RuntimeError('did not understand the sensor selection argument. valid options are "occ" and "motor"')
+    
+    if '%' in options.glob_string:
+        options.glob_string = options.glob_string%subject
+    options.glob_string = os.path.join(options.data_dir, options.glob_string)
+    input_files = glob.glob(options.glob_string)
+    if options.frequency is None:
+        output_files = [''.join(inp.split('.')[:-1]) + '.trajectory' for inp in input_files]
+    else:
+        output_files = [''.join(inp.split('.')[:-1]) + '_FR%3.1f_'%options.frequency + '.trajectory' for inp in input_files]
 
+    print 'Using %s for globbing'%options.glob_string
+    print 'Selected the following files for analysis:'
+    for inp, out in zip(input_files, output_files):
+        print inp, '->', out
+
+    if not options.dry_run:
+        for inp, out in zip(input_files, output_files):
+            print 'Working'
+            print inp, '->', out
+            analyze_subs(inp, out, freq=options.frequency, channels=channel_selection)
  

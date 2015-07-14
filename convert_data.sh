@@ -14,5 +14,5 @@ cd $PBS_O_WORKDIR
 chmod g=wx $PBS_JOBNAME
 
 # FILE TO EXECUTE
-#ipython data_anne.py $PBS_ARRAYID 1> jobs/$PBS_JOBID.out 2> jobs/$PBS_JOBID.err
-ipython analysis.py analyze $PBS_ARRAYID 1> jobs/$PBS_JOBID.out 2> jobs/$PBS_JOBID.err
+ipython data_anne.py tfr $PBS_ARRAYID 1> jobs/$PBS_JOBID.out 2> jobs/$PBS_JOBID.err
+#ipython analysis.py analyze $PBS_ARRAYID 26.5 1> jobs/$PBS_JOBID.out 2> jobs/$PBS_JOBID.err

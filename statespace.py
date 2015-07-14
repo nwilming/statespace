@@ -65,7 +65,9 @@ def conmean(dm, **kwargs):
     '''
     for key, value in kwargs.iteritems():
         dm = dm[dm.field(key) == value]
-    return gaussian_filter(nanmean(dm.data, 0), 15)
+    if len(dm) == 0:
+        raise RuntimeError('No data for ' + str(kwargs))
+    return gaussian_filter(nanmean(dm.data, 0), 2)
     
 
 def dict_product(dicts):
