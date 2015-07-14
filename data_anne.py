@@ -15,24 +15,9 @@ tfr_files = {}
 for sub in subjects:    
     sessions =  glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/Preproc/*cleandata.mat'%sub)
     subject_files[sub] = zip(range(len(sessions)), sessions)
-    sessions = glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/TFR/*fb_all_freq.mat'%sub)
+    sessions = glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/TFR/*_all_freq.mat'%sub)
     tfr_files[sub] = zip(range(len(sessions)), sessions)
 
-
-def get_response_lock(num_samples):
-    def response_lock(trial_info, trial_data, trial_time, units):
-        response = trial_info[8].astype(int)
-        data = trial_data[response-num_samples:response, :]
-        time = trial_time[response-num_samples:response, 0]
-        # The next line converts the response hand code from [12, 18] to [-1, 1]
-        response_hand = (((trial_info[5] - 12)/6) - 0.5) *2        
-        trial = {'stim_strength':trial_info[3], 'choice':trial_info[6], 'correct':trial_info[7],
-                'response_hand':response_hand, 'time':time}
-        for idx, unit in units:
-            trial[unit] = data[:,idx]
-        return trial
-
-    return response_lock
 
 def get_tfr_response_lock():
     def response_lock(trial_info, trial_data, trial_time, units):        
@@ -75,6 +60,20 @@ def adaptor(subject_files, select_data):
                 sys.stdout.flush()
     return trials, channels
 
+def get_response_lock(num_samples):
+    def response_lock(trial_info, trial_data, trial_time, units):
+        response = trial_info[8].astype(int)
+        data = trial_data[response-num_samples:response, :]
+        time = trial_time[response-num_samples:response, 0]
+        # The next line converts the response hand code from [12, 18] to [-1, 1]
+        response_hand = (((trial_info[5] - 12)/6) - 0.5) *2        
+        trial = {'stim_strength':trial_info[3], 'choice':trial_info[6], 'correct':trial_info[7],
+                'response_hand':response_hand, 'time':time}
+        for idx, unit in units:
+            trial[unit] = data[:,idx]
+        return trial
+    return response_lock
+
 
 def tfr_adaptor(subject_files, select_data, freq=None, struct='freq'):
     '''
@@ -94,9 +93,9 @@ def tfr_adaptor(subject_files, select_data, freq=None, struct='freq'):
                 labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
             trialinfo = data[struct]['trialinfo'][:,:]        
             trial_data = data[struct]['powspctrm']
+            print trial_data.shape
             trial_time = data[struct]['time']
-            frequencies = data[struct]['freq']
-            
+            frequencies = data[struct]['freq'][:].flatten()
             channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
             # trial_data is a four dimensional matrix:            
             # time x frequency x sensors x trial
@@ -106,12 +105,11 @@ def tfr_adaptor(subject_files, select_data, freq=None, struct='freq'):
                 for i, (low, high) in enumerate(freq):
                     idx = (low<=frequencies) & (frequencies<=high)
                     d = select_data(trialinfo[:, trial_num],
-                                    trial_data[:, idx, :, trial_num], trial_time[:].flatten(), channels)
+                                    nanmean(trial_data[:, idx, :, trial_num],1), trial_time[:].flatten(), channels)
                     d.update({'trial_id':array([trial_id])[0], 'subject':array([subject])[0], 'session':array([session])[0], 'freq':array([mean([low, high])])[0]})
                     trials.append(d)
                     trial_id += 1 
                 sys.stdout.flush()
-                    
     return trials, channels
 
 
@@ -150,8 +148,18 @@ if __name__ == '__main__':
         dm = tolongform(trials, channels)
         dm.save('P%02i.datamat'%sub)
     elif task == 'tfr':
-        files = {sub:tfr_files[sub]}
-        trials, channels = tfr_adaptor(files, get_tfr_response_lock(), freq=[(0, 12), (13, 40)])
-        dm = tolongform(trials, channels)
-        dm.save('P%02i_tfr.datamat'%sub)
+        for file_name in tfr_files[sub]:
+            inp = {sub:[file_name]}
+            trials, channels = tfr_adaptor(inp, get_tfr_response_lock(), freq=[(0, 12), (13, 40)])
+            output_filename = file_name[1].split('/')[-1].split('.')[0]
+            dm = tolongform(trials, channels)
+            dm.save('data/%s.datamat'%output_filename)
+            # Some of the time points have no valid tfr data. Kill it. This is a hack.
+            nantime =  unique(dm.time[isnan(dm.data)])
+            idnan = array([dm.time==a for a in nantime]).sum(0) > 0
+            if any(all(idnan,1)):
+                raise RuntimeError('Some trials have no valid data. Don\'t know what to do. Fix this. Aborting')
+            dm.data = dm.data[:, ~all(idnan,0)]
+            dm.time = dm.time[:, ~all(idnan,0)]
+            dm.save('data/%s.datamat'%output_filename)
 

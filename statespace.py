@@ -65,7 +65,9 @@ def conmean(dm, **kwargs):
     '''
     for key, value in kwargs.iteritems():
         dm = dm[dm.field(key) == value]
-    return gaussian_filter(nanmean(dm.data, 0), 15)
+    if len(dm) == 0:
+        raise RuntimeError('No data for ' + str(kwargs))
+    return gaussian_filter(nanmean(dm.data, 0), 2)
     
 
 def dict_product(dicts):
@@ -111,10 +113,6 @@ def pca_cleaning(data, factors):
     Important: factors is now a list of valid condition dictionaries
     '''
     X = condition_matrix(data, factors)
-    print X
-    print data
-    print unique(data.stim_strength)
-    print factors
     pca = PCA(n_components=min(X.shape[0], 12))
     print 'Fitting PCA'
     sys.stdout.flush()

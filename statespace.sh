@@ -14,4 +14,5 @@ cd $PBS_O_WORKDIR
 chmod g=wx $PBS_JOBNAME
 
 # FILE TO EXECUTE
-ipython data_anne.py analyze `printf 'P%02i' $PBS_ARRAYID` 1> jobs/$PBS_JOBID.out 2> jobs/$PBS_JOBID.err
+python analysis.py --freq 6. --glob-str P%02i_*freq.datamat $PBS_ARRAYID 1> jobs/$PBS_JOBID.out 2> jobs/$PBS_JOBID.err
+python analysis.py --freq 26.5 --glob-str P%02i_*freq.datamat $PBS_ARRAYID 1> jobs/$PBS_JOBID.out 2> jobs/$PBS_JOBID.err
