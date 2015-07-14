@@ -6,9 +6,13 @@ import glob, os
 from pylab import *
 import seaborn as sns
 import statespace as st
+import cPickle
 
-def analyze_subs(input, output, channels=None, freq=None):
-    import statespace as st
+def load_previous_results(filename):
+    results = cPickle.load(open(filename))
+    return results['Q'], results['Bmax'], results['labels'], results['bnt'], results['D'], results['t_bmax'], results['norms'], results['maps']
+
+def analyze_subs(input, output, channels=None, freq=None, loadQ=None):
     factors = {'choice':[-1, 1], 'stim_strength':[-1, 1]}
     valid_conditions = [{'choice': -1, 'stim_strength': -1},
             {'choice': 1, 'stim_strength': -1},
@@ -36,7 +40,12 @@ def analyze_subs(input, output, channels=None, freq=None):
         pass
     '''
     st.zscore(dm)
-    Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
+    if load_Q is None:
+        Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
+    else:
+        # Load Q matrix from this subject from a different trajectory estimate
+        Q, Bmax, labels, bnt, D, t_bmax, norms, maps = load_previous_results(loadQ)
+        
     # Make sure we are dealing with trials that are timelocked.
     assert sum(dm.time-dm.time[0]) <= finfo(float).eps
     results = st.get_trajectory(dm,
@@ -81,11 +90,13 @@ def tolongform(trjs, condition_mapping, axislabels, select_samples=None):
             ax1label, ax2label = axislabels
             data = concatenate((ax1, ax2))
             axes = concatenate(([ax1label]*len(ax1), [ax2label]*len(ax1)))
+            time = concatenate((time, time))
             trial = {'subject':0*data+subject,
                 'condition':array([condition_mapping[cond]]*len(axes), dtype='S64'),
                 'data':data,
                 'encoding_axis':axes,
                 'time':time}
+
             dm.update(datamat.VectorFactory(trial,{}))
     dm = dm.get_dm()
     dm.add_field('used_hand', mod(dm.subject,2)==0)
@@ -101,7 +112,7 @@ def make_1Dplot(df, encoding_axes=0):
 
 
 from matplotlib.patches import Ellipse
-def make_2Dplot(df, colors=None, errors=False, agg=None):
+def make_2Dplot(df, colors=None, errors=False, agg=None, time_frame=None):
     if agg is None:
         agg = lambda x: nanmean(x, 0)
     if colors is None:
@@ -113,9 +124,22 @@ def make_2Dplot(df, colors=None, errors=False, agg=None):
     for i, (cond, df_c) in enumerate(df.groupby('condition', sort=False)):
         ax1 = df_c[df_c.encoding_axis==ax1label].pivot('subject', 'time', 'data').values
         ax2 = df_c[df_c.encoding_axis==ax2label].pivot('subject', 'time', 'data').values
+        time = df_c[df_c.encoding_axis==ax1label].pivot('subject', 'time', 'time').values
+        time = agg(time)
+        if not time_frame is None:
+            start, end = time_frame
+            start_idx = argmin(abs(time-start))
+            end_idx = argmin(abs(time-end))
+            end_idx = min(end_idx+1, ax1.shape[1])
+            ax1 = ax1[:,start_idx:end_idx]
+            ax2 = ax2[:,start_idx:end_idx]
+            time = time[start_idx:end_idx]
+            print 'Time frame:', time[0], time[-1]
         x, y = agg(ax1), agg(ax2)
+
         if not errors:
-            leg += [plot(x,  y, '-', color=colors[i])[0]]
+            scatter(x, y, c=time)
+            #leg += [plot(x,  y, '-', color=colors[i])[0]]
         else:
             sem1 = (nanstd(ax1, 0)/(ax1.shape[0])**.5)
             sem2 = (nanstd(ax2, 0)/(ax2.shape[0])**.5)
@@ -164,6 +188,8 @@ if __name__ == '__main__':
             help='Restrict to a set of sensors. Valid values are "occ" and "motor"')
     parser.add_option('-f', '--freq', dest='frequency', type=float, default=None,
             help='Choose a frequency to analyze if you use tfr data.')
+    parser.add_option('-Q', '--load-Q', dest='loadQ', type=str, default=None,
+            help='Specify a data file from which Q matrix is loaded. This needs to be a trajectory estimate from a previous run.')
     parser.add_option('--dry-run', dest='dry_run', action='store_true', default=False)
     (options, args) = parser.parse_args()
     subject = int(args[0])
@@ -191,9 +217,12 @@ if __name__ == '__main__':
     print 'Selected the following files for analysis:'
     for inp, out in zip(input_files, output_files):
         print inp, '->', out
-
+    if options.loadQ is None:
+        print 'Estimating Q embedding matrix for each of these files.'
+    else:
+        print 'Loading Q matrix from file', options.loadQ
     if not options.dry_run:
         for inp, out in zip(input_files, output_files):
             print 'Working'
             print inp, '->', out
-            analyze_subs(inp, out, freq=options.frequency, channels=channel_selection)
+            analyze_subs(inp, out, freq=options.frequency, channels=channel_selection, loadQ=options.loadQ)
