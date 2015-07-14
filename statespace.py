@@ -182,6 +182,7 @@ def valid_conditions(data, factors):
 def get_trajectory(data, conditions, axis1, axis2):
     results = {}    
     for i, condition in enumerate(conditions):
+        
         population_activity = condition_matrix(data, [condition])
         assert population_activity.shape[1] == data.data.shape[1]
         vax1 = dot(axis1, population_activity)

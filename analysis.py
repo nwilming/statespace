@@ -56,21 +56,20 @@ def combine_trajectories(trjs, select_samples=None):
         dm.update(trajectory)
     return dm.get_dm(), trj.keys()
 
-def tolongform(trjs, condition_mapping, select_samples=None):
+def tolongform(trjs, condition_mapping, axislabels, select_samples=None):
     '''
     trjs is a (subject code, trajectory dict) tuple
     '''
     if select_samples is None:
         select_samples = lambda x: x
     conditions = condition_mapping.keys()
-    print conditions
     #conditions = trjs[0][1].keys()
     dm = datamat.DatamatAccumulator()
     for cond_nr,  cond in enumerate(conditions):
         for subject, filename, trj in trjs:
             ax1 = select_samples(trj[cond][0])
             ax2 = select_samples(trj[cond][1]) 
-            ax1label, ax2label = trj['labels'][1:]
+            ax1label, ax2label = axislabels
             data = concatenate((ax1, ax2))
             axes = concatenate(([ax1label]*len(ax1), [ax2label]*len(ax1)))
             trial = {'subject':0*data+subject, 
@@ -95,17 +94,34 @@ def make_1Dplot(df, encoding_axes=0):
     axhline(color='k')
 
 
-def make_2Dplot(df):
-    colors = sns.color_palette()
+from matplotlib.patches import Ellipse
+def make_2Dplot(df, colors=None, errors=False, agg=None):
+    if agg is None:
+        agg = lambda x: nanmean(x, 0)
+    if colors is None:
+        colors = sns.color_palette()
     conditions = []
     leg = []
     ax1label, ax2label = unique(df.encoding_axis)
+    
     for i, (cond, df_c) in enumerate(df.groupby('condition', sort=False)):        
         ax1 = df_c[df_c.encoding_axis==ax1label].pivot('subject', 'time', 'data').values
-        ax2 = df_c[df_c.encoding_axis==ax2label].pivot('subject', 'time', 'data').values        
-        plot(ax1.mean(0), ax2.mean(0), color=colors[i])
-        plot(ax1.mean(0)[0], ax2.mean(0)[0], color=colors[i], marker='s')
-        plot(ax1.mean(0)[-1], ax2.mean(0)[-1], color=colors[i], marker='>')
+        ax2 = df_c[df_c.encoding_axis==ax2label].pivot('subject', 'time', 'data').values
+        x, y = agg(ax1), agg(ax2)
+        if not errorbar:
+            leg += [plot(x,  y, '-', color=colors[i])[0]]
+        else:
+            sem1 = (nanstd(ax1, 0)/(ax1.shape[0])**.5)
+            sem2 = (nanstd(ax2, 0)/(ax2.shape[0])**.5)            
+            for xx, yy, sx, sy in zip(nanmean(ax1, 0), nanmean(ax2, 0), sem1, sem2):
+                gca().add_artist(Ellipse((xx, yy), sx, sy, facecolor=colors[i], alpha=0.1))
+            #errorbar(nanmean(ax1, 0), nanmean(ax2, 0), xerr=sem1, yerr=sem2, color=colors[i])
+            leg += [plot(x, y, '-', color=colors[i])[0]]
+        if len(x.shape) == 1:
+            x = x[:, newaxis]
+            y = y[:, newaxis] 
+        plot(x[0, :], y[0, :], color=colors[i], marker='s', linestyle='None')
+        plot(x[-1, :], y[-1, :], color=colors[i], marker='>', linestyle='None')
         conditions.append(cond)
     axvline(color='k')
     axhline(color='k')
