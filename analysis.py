@@ -10,7 +10,8 @@ import cPickle
 
 def load_previous_results(filename):
     results = cPickle.load(open(filename))
-    return results['Q'], results['Bmax'], results['labels'], results['bnt'], results['D'], results['t_bmax'], results['norms'], results['maps']
+    print results.keys()
+    return results['Q'], results['Bmax'], results['labels'], results['D'], results['t_bmax'], results['norms'], results['maps'], results['exp_var']
 
 def analyze_subs(input, output, channels=None, freq=None, loadQ=None):
     factors = {'choice':[-1, 1], 'stim_strength':[-1, 1]}
@@ -18,8 +19,8 @@ def analyze_subs(input, output, channels=None, freq=None, loadQ=None):
             {'choice': 1, 'stim_strength': -1},
            {'choice': -1, 'stim_strength': 1},
             {'choice': 1, 'stim_strength': 1}]
-    valid_conditions = [{'choice': -1},
-            {'choice': 1}, {'stim_strength':1}, {'stim_strength':-1}]
+    #valid_conditions = [{'choice': -1},
+    #        {'choice': 1}, {'stim_strength':1}, {'stim_strength':-1}]
 
     formula = 'choice+stim_strength+1'
     dm = datamat.load(input, 'Datamat')
@@ -28,7 +29,11 @@ def analyze_subs(input, output, channels=None, freq=None, loadQ=None):
             raise RuntimeError('Selected frequency not in data. Available frequencies: ' + str(unique(dm.freq)))
         dm = dm[dm.freq==freq]
     if channels is not None:
-        dm.data = dm.data[:,channels]
+        #print dm.data.shape
+        #print channels.shape
+        idx = in1d(dm.unit, channels)
+        dm = dm[idx]
+        assert len(unique(dm.unit)) == len(channels)
     # Need to identify no nan starting point
     '''
     a = array([st.conmean(dm, **v) for v in valid_conditions])
@@ -41,11 +46,12 @@ def analyze_subs(input, output, channels=None, freq=None, loadQ=None):
     '''
     st.zscore(dm)
     if loadQ is None:
-        Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
+        Q, Bmax, labels, bnt, D, t_bmax, norms, maps, exp_var = st.embedd(dm, formula, valid_conditions, N_components=3)
     else:
         # Load Q matrix from this subject from a different trajectory estimate
-        Q, Bmax, labels, bnt, D, t_bmax, norms, maps = load_previous_results(loadQ)
-
+        print 'Loading embedding files from', loadQ
+        Q, Bmax, labels, D, t_bmax, norms, maps, exp_var = load_previous_results(loadQ)
+        
     # Make sure we are dealing with trials that are timelocked.
     assert sum(dm.time-dm.time[0]) <= finfo(float).eps
     results = st.get_trajectory(dm,
@@ -54,8 +60,8 @@ def analyze_subs(input, output, channels=None, freq=None, loadQ=None):
     del dm
     import cPickle
     results.update({'Q':Q, 'Bmax':Bmax, 'labels':labels,
-        't_bamx':t_bmax, 'norms':norms, 'maps':maps,
-        'factors':factors, 'valid_conditions':valid_conditions})
+        't_bmax':t_bmax, 'norms':norms, 'maps':maps, 'D':D, 
+        'factors':factors, 'valid_conditions':valid_conditions, 'exp_var':exp_var})
     cPickle.dump(results, open(output, 'w'))
 
 
@@ -190,15 +196,29 @@ if __name__ == '__main__':
     parser.add_option('-Q', '--load-Q', dest='loadQ', type=str, default=None,
             help='Specify a data file from which Q matrix is loaded. This needs to be a trajectory estimate from a previous run.')
     parser.add_option('--dry-run', dest='dry_run', action='store_true', default=False)
+    parser.add_option('--suffix', dest='suffix', default='', help='Suffix to append to trajectory')
     (options, args) = parser.parse_args()
     subject = int(args[0])
     channel_selection = None
     if options.sensor_selection == 'occ':
         from scipy.io import loadmat
-        channel_selection = loadmat('sensorselection.mat')['chans'][0,0][1].flatten()-1
+        #channel_selection = loadmat('sensorselection.mat')['chans'][0,0][1].flatten()-1
+        channel_selection = ['MLP41', 'MPL31', 'MZP01', 'MRP31', 'MRP41', 'MLP53', 'MLP52',
+                'MPL51', 'MRP51', 'MRP52', 'MRP53', 'MLO12', 'MLO11', 'MZO01', 
+                'MRO11', 'MRO12', 'MLO23', 'MLO22', 'MLO21', 'MRO21', 'MRO22', 
+                'MRO23', 'MLO32', 'MLO31', 'MZO02', 'MRO31', 'MRO32', 'MRP56', 
+                'MRP55', 'MRP54', 'MRP44', 'MRP43', 'MRP42', 'MRP34', 'MRP33', 
+                'MRP32', 'MRP22', 'MRP21', 'MRP11', 'MRP31', 'MZC04', 'MLP56', 
+                'MLP55', 'MLP54', 'MLP44', 'MLP43', 'MLP42', 'MLP34', 'MLP33', 
+                'MLP32', 'MLP22', 'MLP21', 'MLP11', 'MLP31']
     elif options.sensor_selection == 'motor':
         from scipy.io import loadmat
-        channel_selection = loadmat('sensorselection.mat')['chans'][0,1][1].flatten()-1
+        #channel_selection = loadmat('sensorselection.mat')['chans'][0,1][1].flatten()-1
+        channel_selection = ['MLC21', 'MLC22', 'MLC52', 'MLC41', 'MLC23', 'MLC53', 'MLC31',
+                             'MLC24', 'MLC16', 'MLC25', 'MLC32', 'MLC42', 'MLC54', 'MLC55', 
+                             'MLP12', 'MLP23', 'MRC21', 'MRC22', 'MRC52', 'MRC41', 'MRC23', 
+                             'MRC53', 'MRC31', 'MRC24', 'MRC16', 'MRC25', 'MRC32', 'MRC42', 
+                             'MRC54', 'MRC55', 'MRP12', 'MRP23']
     else:
         if options.sensor_selection is not None:
             raise RuntimeError('did not understand the sensor selection argument. valid options are "occ" and "motor"')
@@ -208,9 +228,9 @@ if __name__ == '__main__':
     options.glob_string = os.path.join(options.data_dir, options.glob_string)
     input_files = glob.glob(options.glob_string)
     if options.frequency is None:
-        output_files = [''.join(inp.split('.')[:-1]) + '.trajectory' for inp in input_files]
+        output_files = [''.join(inp.split('.')[:-1]) + '%s.trajectory'%options.suffix for inp in input_files]
     else:
-        output_files = [''.join(inp.split('.')[:-1]) + '_FR%3.1f_'%options.frequency + '.trajectory' for inp in input_files]
+        output_files = [''.join(inp.split('.')[:-1]) + '_FR%3.1f_'%options.frequency + '%s.trajectory'%options.suffix for inp in input_files]
 
     print 'Using %s for globbing'%options.glob_string
     print 'Selected the following files for analysis:'
