@@ -142,7 +142,7 @@ def get_conditions(conditions, files, w, condition_mapping):
 if __name__ == '__main__':
 
     from optparse import OptionParser
-    parser = OptionParser('python analze.py [-f] [-s] input output_trajectory')
+    parser = OptionParser('python analze.py subject_number')
     parser.add_option('--data-dir', dest='data_dir', default='data/')
     parser.add_option('--glob-str', dest='glob_string',
                       default='P%02i_*freq.dm',
@@ -161,6 +161,8 @@ if __name__ == '__main__':
     parser.add_option('--suffix', dest='suffix', default='',
                       help='Suffix to append to trajectory')
     (options, args) = parser.parse_args()
+    if len(args) == 0:
+        parser.error('Subject number is required')
     subject = int(args[0])
     channel_selection = None
     if options.sensor_selection == 'occ':
@@ -200,7 +202,7 @@ if __name__ == '__main__':
     print 'Selected the following files for analysis:'
     for inp, out in zip(input_files, output_files):
         print inp, '->', out
-    if options.loadQ is None:
+    if options.applyQ is None:
         print 'Estimating Q embedding matrix for each of these files.'
     else:
         print 'Loading Q matrix from file. Applying this embedding to the above files.', options.applyQ
@@ -210,8 +212,8 @@ if __name__ == '__main__':
         for inp, out in zip(input_files, output_files):
             print 'Working'
             print inp, '->', out
-            data = _load_and_prep_data(inp, channel_selection, freq=options.frequency)
-            if options.loadQ is None:
+            dm = _load_and_prep_data(inp, channel_selection, freq=options.frequency)
+            if options.applyQ is None:
                 results = find_embedding(dm, valid_conditions)
             else:
                 results = apply_embedding(dm, **embedding)
