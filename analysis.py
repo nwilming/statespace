@@ -40,12 +40,12 @@ def analyze_subs(input, output, channels=None, freq=None, loadQ=None):
         pass
     '''
     st.zscore(dm)
-    if load_Q is None:
+    if loadQ is None:
         Q, Bmax, labels, bnt, D, t_bmax, norms, maps = st.embedd(dm, formula, valid_conditions)
     else:
         # Load Q matrix from this subject from a different trajectory estimate
         Q, Bmax, labels, bnt, D, t_bmax, norms, maps = load_previous_results(loadQ)
-        
+
     # Make sure we are dealing with trials that are timelocked.
     assert sum(dm.time-dm.time[0]) <= finfo(float).eps
     results = st.get_trajectory(dm,
@@ -134,12 +134,11 @@ def make_2Dplot(df, colors=None, errors=False, agg=None, time_frame=None):
             ax1 = ax1[:,start_idx:end_idx]
             ax2 = ax2[:,start_idx:end_idx]
             time = time[start_idx:end_idx]
-            print 'Time frame:', time[0], time[-1]
         x, y = agg(ax1), agg(ax2)
 
         if not errors:
-            scatter(x, y, c=time)
-            #leg += [plot(x,  y, '-', color=colors[i])[0]]
+            #scatter(x, y, c=time)
+            leg += [plot(x,  y, '-', color=colors[i])[0]]
         else:
             sem1 = (nanstd(ax1, 0)/(ax1.shape[0])**.5)
             sem2 = (nanstd(ax2, 0)/(ax2.shape[0])**.5)

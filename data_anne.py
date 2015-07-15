@@ -106,6 +106,7 @@ def tfr_adaptor(subject_files, select_data, freq=None, struct='freq'):
                     idx = (low<=frequencies) & (frequencies<=high)
                     d = select_data(trialinfo[:, trial_num],
                                     nanmean(trial_data[:, idx, :, trial_num],1), trial_time[:].flatten(), channels)
+                    print d.keys()
                     d.update({'trial_id':array([trial_id])[0], 'subject':array([subject])[0], 'session':array([session])[0], 'freq':array([mean([low, high])])[0]})
                     trials.append(d)
                     trial_id += 1
@@ -117,6 +118,7 @@ def tfr_adaptor(subject_files, select_data, freq=None, struct='freq'):
 def tolongform(trials, channels):
     ### Now convert to long form.
     length = len(channels)*len(trials)
+
     width = trials[0][channels[0][1]].shape[0]
     offset = 0
     fields = set(trials[0].keys()) - set([c[1] for c in channels]) - set(['time'])
@@ -152,6 +154,9 @@ if __name__ == '__main__':
             inp = {sub:[file_name]}
             trials, channels = tfr_adaptor(inp, get_tfr_response_lock(), freq=[(8, 14), (14, 30), (60-80)])
             output_filename = file_name[1].split('/')[-1].split('.')[0]
+            print channels
+            print file_name
+
             dm = tolongform(trials, channels)
             dm.save('data/%s.datamat'%output_filename)
             # Some of the time points have no valid tfr data. Kill it. This is a hack.
