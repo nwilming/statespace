@@ -109,15 +109,16 @@ def check_factors(data, factors):
             print condition, sum(isnan(x))
 
 
-def pca_cleaning(data, factors):
+def pca_cleaning(data, factors, N_components=12):
     '''
     Performs PCA based data cleaning on the population responses.
 
     Important: factors is now a list of valid condition dictionaries
     '''
+    
     X = condition_matrix(data, factors)
-    pca = PCA(n_components=min(X.shape[0], 12))
-    print 'Fitting PCA'
+    pca = PCA(n_components=min(X.shape[0], N_components))
+    print 'Fitting PCA = %i components'%N_components
     sys.stdout.flush()
     pca.fit(X.T)
     ks = []
@@ -128,7 +129,8 @@ def pca_cleaning(data, factors):
     print 'Transforming X'
     sys.stdout.flush()
     Xpca = dot(D, X)
-    return X, Xpca, D
+    print pca.explained_variance_ratio_
+    return X, Xpca, D, pca.explained_variance_ratio_
 
 
 def regression_embedding(bnt, D):
@@ -154,7 +156,7 @@ def regression_embedding(bnt, D):
     return Q, Bmax, bmax_list, norms, maps
 
 
-def embedd(data, formula, valid_conditions):
+def embedd(data, formula, valid_conditions, N_components=12):
     '''
     Statespace analysis wrapper function. Use this function for your analysis.
 
@@ -167,11 +169,11 @@ def embedd(data, formula, valid_conditions):
     bnt, labels = patsy_regression_weights(data, formula)
     print 'Doing PCA cleaning'
     sys.stdout.flush()
-    X, Xpca, D = pca_cleaning(data, valid_conditions)
+    X, Xpca, D, exp_var = pca_cleaning(data, valid_conditions, N_components)
     print 'Regression embedding'
     sys.stdout.flush()
     Q, Bmax, t_bmax, norms, maps = regression_embedding(bnt, D)
-    return Q, Bmax, labels, bnt, D, t_bmax, norms, maps
+    return Q, Bmax, labels, bnt, D, t_bmax, norms, maps, exp_var
 
 
 def valid_conditions(data, factors):

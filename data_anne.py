@@ -56,7 +56,7 @@ def get_response_lock(num_samples):
         trial = {'stim_strength':trial_info[3], 'choice':trial_info[6], 'correct':trial_info[7],
                 'response_hand':response_hand, 'time':time}
         for idx, unit in units:
-            trial[unit] = data[:,idx]
+            trial[idx] = data[:,idx]
         return trial
     return response_lock
 
@@ -93,7 +93,6 @@ def tfr_adaptor(subject_files, select_data, freq=None, struct='freq'):
                 labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
             trialinfo = data[struct]['trialinfo'][:,:]
             trial_data = data[struct]['powspctrm']
-            print trial_data.shape
             trial_time = data[struct]['time'][:].flatten()
             frequencies = data[struct]['freq'][:].flatten()
             channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
@@ -150,7 +149,7 @@ if __name__ == '__main__':
     elif task == 'tfr':
         for file_name in tfr_files[sub]:
             inp = {sub:[file_name]}
-            trials, channels = tfr_adaptor(inp, get_tfr_response_lock(), freq=[(8, 14), (14, 30), (60-80)])
+            trials, channels = tfr_adaptor(inp, get_tfr_response_lock(), freq=[(8, 14), (14, 30), (60, 80)])
             output_filename = file_name[1].split('/')[-1].split('.')[0]
             dm = tolongform(trials, channels)
             dm.save('data/%s.datamat'%output_filename)
