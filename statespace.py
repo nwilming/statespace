@@ -18,15 +18,16 @@ import patsy
 
 def zscore(data):
     for n in unique(data.unit):
-        mu, sigma = nanmean(data.data[data.unit==n]), nanstd(data.data[data.unit==n])
-        data.data[data.unit==n] = (data.data[data.unit==n]-mu)/sigma
+        mu = nanmean(data.data[data.unit == n])
+        sigma = nanstd(data.data[data.unit == n])
+        data.data[data.unit == n] = (data.data[data.unit == n] - mu) / sigma
 
 
 def patsy_regression_weights(data, formula):
     '''
     Regress factors onto predicted variable from data.
     '''
-    nunits, ntime = len(unique(data.unit)), data.data.shape[1]
+    ntime = data.data.shape[1]
     dm = datamat.AccumulatorFactory()
     for n in unique(data.unit):
         sys.stdout.flush()
@@ -39,7 +40,7 @@ def patsy_regression_weights(data, formula):
             idx = isnan(r_tu)
             if not all(idx):
                 fit = linear_model.LinearRegression(
-                    fit_intercept=False).fit(regs[~idx,:], r_tu[~idx])
+                    fit_intercept=False).fit(regs[~idx, :], r_tu[~idx])
                 coefs.append(fit.coef_)
             else:
                 coefs.append(nan*ones((regs.shape[1],)))
@@ -115,10 +116,10 @@ def pca_cleaning(data, factors, N_components=12):
 
     Important: factors is now a list of valid condition dictionaries
     '''
-    
+
     X = condition_matrix(data, factors)
     pca = PCA(n_components=min(X.shape[0], N_components))
-    print 'Fitting PCA = %i components'%N_components
+    print 'Fitting PCA = %i components' % N_components
     sys.stdout.flush()
     pca.fit(X.T)
     ks = []
@@ -139,12 +140,12 @@ def regression_embedding(bnt, D):
     PCA cleaned space and orthogonalize regression vectors.
     '''
     Bmax = []
-    bmax_list= []
+    bmax_list = []
     norms = []
     maps = []
     for v in range(bnt.coef.shape[2]):
         b = bnt.coef[:, :, v]
-        b = [dot(D, b[:,i]) for i in range(b.shape[1])]
+        b = [dot(D, b[:, i]) for i in range(b.shape[1])]
         maps.append(array(b))
         norm_b = [linalg.norm(bb) for bb in b]
         bmax = b[argmax(norm_b)]
@@ -201,8 +202,9 @@ def get_trajectory(data, conditions, axis1, axis2, time=None):
         results[str(condition)] = (vax1, vax2, time)
     return results
 
+
 def plot_population_activity(data, factors, axis1, axis2,
-        legend=False, epochs=None):
+                             legend=False, epochs=None):
     import seaborn as sns
     conditions = list(dict_product(factors))
     colors = sns.color_palette('muted', len(conditions))
@@ -220,8 +222,8 @@ def plot_population_activity(data, factors, axis1, axis2,
         else:
             for j, (low, high) in enumerate(epochs):
                 h = plt.plot(vax1[low:high],
-                        vax2[low:high], ls=symbols[j%len(symbols)],
-                        color=colors[i])[0]
+                             vax2[low:high], ls=symbols[j % len(symbols)],
+                             color=colors[i])[0]
                 plt.plot(vax1[low], vax2[low], 'o', color=colors[i])
                 plt.plot(vax1[high], vax2[high], 'D', color=colors[i])
 
@@ -234,7 +236,7 @@ def plot_population_activity(data, factors, axis1, axis2,
 def trellis_plot(data, Q, labels, condition, Bmax=None):
     import matplotlib
     gs = matplotlib.gridspec.GridSpec(3, 3)
-    for k in range(1,Q.shape[1]):
+    for k in range(1, Q.shape[1]):
         for j in range(Q.shape[1]-1):
             plt.subplot(gs[k-1, j])
             if k <= j:
@@ -250,13 +252,10 @@ def trellis_plot(data, Q, labels, condition, Bmax=None):
 
             plt.xlabel('%s' % labels[k])
             plt.ylabel('%s' % labels[j])
-            xmax = max(absolute(plt.xlim()))
-            ymax = max(absolute(plt.ylim()))
             if Bmax is not None:
-                a = dot(Q[:, [k,j]].T, Bmax[:, [k,j]])
-                plt.plot([-a[1,0], a[1,0]], [-a[1,1], a[1,1]], 'k--')
-                plt.plot([-a[0,0], a[0,0]], [-a[0,1], a[0,1]], 'k--')
-
+                a = dot(Q[:, [k, j]].T, Bmax[:, [k, j]])
+                plt.plot([-a[1, 0], a[1, 0]], [-a[1, 1], a[1, 1]], 'k--')
+                plt.plot([-a[0, 0], a[0, 0]], [-a[0, 1], a[0, 1]], 'k--')
                 plt.axis('equal')
     plt.subplot(gs[0, 2])
     plt.legend(leg[0], leg[1])
@@ -264,6 +263,7 @@ def trellis_plot(data, Q, labels, condition, Bmax=None):
     plt.yticks([])
     plt.xlabel('')
     plt.ylabel('')
+
 
 def dict_filter(dm, condition):
     idx = ones(dm.field(dm.fieldnames()[0]).shape).astype(bool)
@@ -287,8 +287,8 @@ def characterize_population(data, bnt, factors, Q):
             plt.yticks([])
             if iu == 0:
                 plt.ylabel(str(cond))
-    for iu,unit in enumerate(unique(data.unit)):
+    for iu, unit in enumerate(unique(data.unit)):
         plt.subplot(gs[len(conditions), iu])
         bs = [bnt[unit, t] for t in range(bnt.shape[1])]
-        plt.plot(array(bs)[:, (0,2)])
+        plt.plot(array(bs)[:, (0, 2)])
         plt.legend(factors.keys())
