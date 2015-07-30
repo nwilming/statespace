@@ -1,6 +1,10 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
 '''
-Implement state space analysis from Mante et al. 2013 Nature something
-
+Implements state space analysis from:
+    Mante, V., Sussillo, D., Shenoy, K. V & Newsome, W. T.
+    Context-dependent computation by recurrent dynamics in prefrontal cortex.
+    Nature 503, 78–84 (2013).
 
 '''
 import sys
@@ -14,9 +18,13 @@ from scipy.stats import nanmean
 import matplotlib
 from ocupy import datamat
 import patsy
+from named_array import AxisArray
 
 
 def zscore(data):
+    '''
+    Z-score a dataset in place.
+    '''
     for n in unique(data.unit):
         mu = nanmean(data.data[data.unit == n])
         sigma = nanstd(data.data[data.unit == n])
@@ -34,6 +42,14 @@ def patsy_regression_weights(data, formula):
         unit = data[data.unit == n]
         datadict = dict((f, unit.field(f)) for f in unit.fieldnames())
         regs = patsy.dmatrix(formula, data=datadict)
+        move_intercept = False
+        labels = regs.design_info.column_names
+        if labels[0] == 'Intercept':
+            # If an intercept is included it becomes the first term - this is
+            # really counter intuitive for the QR decomposition which is
+            # sensitive to the ordering of variables.
+            labels = labels[1:]+ [labels[0]]
+            move_intercept = True
         coefs = []
         for t in range(ntime):
             r_tu = unit.data[:, t]
@@ -41,12 +57,16 @@ def patsy_regression_weights(data, formula):
             if not all(idx):
                 fit = linear_model.LinearRegression(
                     fit_intercept=False).fit(regs[~idx, :], r_tu[~idx])
-                coefs.append(fit.coef_)
+                cs = fit.coef_
+                if move_intercept:
+                    cs[0:-1], cs[-1] = cs[1:], cs[0]
+                cs.dtype = [(name, 'float') for name in labels]
+                coefs.append(cs)
             else:
                 coefs.append(nan*ones((regs.shape[1],)))
         dm.update({'unit': n, 'coef': squeeze(array(coefs))})
     betas_nt = dm.get_dm()
-    return betas_nt, regs.design_info.column_names
+    return betas_nt, labels
 
 
 def predict_unit(unit, formula, bnt):
@@ -130,8 +150,7 @@ def pca_cleaning(data, factors, N_components=12):
     print 'Transforming X'
     sys.stdout.flush()
     Xpca = dot(D, X)
-    print pca.explained_variance_ratio_
-    return X, Xpca, D, pca.explained_variance_ratio_
+    return X, Xpca, D, pca.explained_variance_ratio_, pca
 
 
 def regression_embedding(bnt, D):
@@ -143,8 +162,9 @@ def regression_embedding(bnt, D):
     bmax_list = []
     norms = []
     maps = []
-    for v in range(bnt.coef.shape[2]):
-        b = bnt.coef[:, :, v]
+    labels = []
+    for v in bnt.coef.dtype.names:
+        b = bnt.coef[v]
         b = [dot(D, b[:, i]) for i in range(b.shape[1])]
         maps.append(array(b))
         norm_b = [linalg.norm(bb) for bb in b]
@@ -152,8 +172,10 @@ def regression_embedding(bnt, D):
         Bmax.append(bmax)
         bmax_list.append(where(b == bmax)[0][0])
         norms.append(norm_b)
+        labels.append(v)
     Bmax = array(Bmax).T
     Q, r = linalg.qr(Bmax)
+    Q = AxisArray(Q, labels)
     return Q, Bmax, bmax_list, norms, maps
 
 
@@ -163,6 +185,7 @@ def embedd(data, formula, valid_conditions, N_components=12):
 
     Input:
     data: ocupy.datamat
+    formula: Patsy formula that defines the regression model.
 
     '''
     print 'Getting regression weights'
@@ -170,11 +193,11 @@ def embedd(data, formula, valid_conditions, N_components=12):
     bnt, labels = patsy_regression_weights(data, formula)
     print 'Doing PCA cleaning'
     sys.stdout.flush()
-    X, Xpca, D, exp_var = pca_cleaning(data, valid_conditions, N_components)
+    X, Xpca, D, exp_var, pca = pca_cleaning(data, valid_conditions, N_components)
     print 'Regression embedding'
     sys.stdout.flush()
     Q, Bmax, t_bmax, norms, maps = regression_embedding(bnt, D)
-    return Q, Bmax, labels, bnt, D, t_bmax, norms, maps, exp_var
+    return Q, Bmax, labels, bnt, D, t_bmax, norms, maps, exp_var, pca
 
 
 def valid_conditions(data, factors):

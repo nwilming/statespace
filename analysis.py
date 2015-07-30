@@ -1,3 +1,11 @@
+'''
+TODOs:
+    - Broadbend activity
+    - topological plots of regression weights
+    - baseline correction (single trial vs. average)
+    - cross validation
+'''
+
 import h5py
 from numpy import *
 from ocupy import datamat
@@ -72,21 +80,6 @@ def apply_embedding(dm, Q=None, Bmax=None, labels=None, D=None, t_bmax=None,
     return results
 
 
-def combine_trajectories(trjs, select_samples=None):
-    '''
-    trjs is a (subject code, trajectory dict) tuple
-    '''
-    if select_samples is None:
-        select_samples = lambda x: x
-    dm = datamat.AccumulatorFactory()
-    for subject, trj in trjs:
-        trajectory = {'subject': subject}
-        for j, (key, value) in enumerate(trj.iteritems()):
-            trajectory['condition_%i' % j] = select_samples(value)
-        dm.update(trajectory)
-    return dm.get_dm(), trj.keys()
-
-
 def tolongform(trjs, condition_mapping, axislabels, select_samples=None):
     '''
     trjs is a (subject code, trajectory dict) tuple
@@ -117,27 +110,6 @@ def tolongform(trjs, condition_mapping, axislabels, select_samples=None):
     dm.add_field('used_hand', mod(dm.subject, 2) == 0)
     return dm, conditions
 
-
-def get_conditions(conditions, files, w, condition_mapping):
-    '''
-    I don't remember what this is doing. Maybe compute condition averages?
-    '''
-    dm = datamat.DatamatAccumulator()
-    for subject, file in files:
-        data = datamat.load(file, 'Datamat')
-        st.zscore(data)
-        for cond_nr, cond in enumerate(conditions):
-            conmean = nanmean(st.condition_matrix(data, [cond]), 0)[-w:]
-            trial = {'subject': 0*ones(conmean.shape)+subject,
-                     'condition': array(
-                                        [condition_mapping[str(cond)]] *
-                                        len(conmean)),
-                     'data': conmean,
-                     'time': linspace(-len(conmean)/600., 0, len(conmean))}
-            dm.update(datamat.VectorFactory(trial, {}))
-    dm = dm.get_dm()
-    dm.add_field('used_hand', mod(dm.subject, 2) == 0)
-    return dm
 
 if __name__ == '__main__':
 
