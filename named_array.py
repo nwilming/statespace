@@ -7,7 +7,7 @@ class AxisArray(np.ndarray):
         # We first cast to be our class type
         obj = np.asarray(input_array).view(cls)
         # add the new attribute to the created instance
-        obj.column_names = np.asarray(info)
+        obj.column_names = np.asarray(column_names)
         # Finally, we must return the newly created object:
         return obj
 
