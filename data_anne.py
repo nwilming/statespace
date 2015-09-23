@@ -1,171 +1,114 @@
 import h5py
 from numpy import *
-from ocupy import datamat
+import pandas as pd
 from itertools import product as iproduct
 import glob, os, sys
 from pylab import *
-import seaborn as sns
 import statespace as st
-
-conditions = ['stim_strength', 'response', 'choice', 'correct']
 
 subjects = [12, 13, 15, 16, 17, 10, 9, 8, 2, 3, 6, 7, 4, 5, 20, 21, 14, 19, 18]
 subject_files = {}
 tfr_files = {}
 for sub in subjects:
-    sessions =  glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/Preproc/*cleandata.mat'%sub)
+    sessions =  glob.glob('/Volumes/dump/Data-Anne/P%02i*cleandata.mat'%sub)
     subject_files[sub] = zip(range(len(sessions)), sessions)
     sessions = glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/TFR/*_all_freq.mat'%sub)
     tfr_files[sub] = zip(range(len(sessions)), sessions)
 
-def adaptor(subject_files, select_data):
+
+def df_from_fieldtrip(data, index_labels=None):
     '''
-    Sits on top of a matlab file and returns a datamat to access it.
-
-    select_data : function that receives trialinfo and trialdata field. It returns
-        the data to be used for this trial and a dict containing metadata.
+    Read a fieldtrip data structure into a data frame.
     '''
-    trials = []
-    for subject, data in subject_files.iteritems():
-        for session, filename in data:
-            data = h5py.File(filename)
-            labels = []
-            for label in data['data']['label'][:].T:
-                labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
+    collect = []
+    index = []
+    labels = []
+    for label in data['data']['label'][:].T:
+        labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
+    trialinfo = data['data']['trialinfo'][:,:]
+    trial_data = data['data']['trial']
+    trial_time = data['data']['time']
+    channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
+    for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):
+        td_vals = data[td[0]] # this is the data for this trial
+        tt_vals = data[tt[0]] # this is the time for this trial
+        ind = tile(ti, (len(tt_vals), 1))
+        ind = hstack((tt_vals[:]*0+j, ind, tt_vals))
+        index.append(ind)
+        collect.append(td_vals)
+    index = vstack(index)
+    collect = vstack(collect)
+    ind = pd.MultiIndex.from_arrays(index.T, names=index_labels)
+    ind_col = pd.MultiIndex.from_arrays([labels], names='Sensors')
+    return pd.DataFrame(collect, index=ind, columns=ind_col)
 
-            trialinfo = data['data']['trialinfo'][:,:]
-            trial_data = data['data']['trial']
-            trial_time = data['data']['time']
-            channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
-            for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):
-                td_vals = data[td[0]]
-                tt_vals = data[tt[0]]
-                d = select_data(ti, td_vals, tt_vals, channels)
-                d.update({'subject':array([subject])[0], 'session':array([session])[0]})
-                trials.append(d)
-                sys.stdout.flush()
-    return trials, channels
-
-def get_response_lock(num_samples):
-    def response_lock(trial_info, trial_data, trial_time, units):
-        response = trial_info[8].astype(int)
-        data = trial_data[response-num_samples:response, :]
-        time = trial_time[response-num_samples:response, 0]
-        # The next line converts the response hand code from [12, 18] to [-1, 1]
-        response_hand = (((trial_info[5] - 12)/6) - 0.5) *2
-        trial = {'stim_strength':trial_info[3], 'choice':trial_info[6], 'correct':trial_info[7],
-                'response_hand':response_hand, 'time':time}
-        for idx, unit in units:
-            trial[idx] = data[:,idx]
-        return trial
-    return response_lock
-
-
-def get_tfr_response_lock():
-    def response_lock(trial_info, trial_data, trial_time, units):
-        data = trial_data
-        time = trial_time
-        # The next line converts the response hand code from [12, 18] to [-1, 1]
-        response_hand = (((trial_info[5] - 12)/6) - 0.5) *2
-        trial = {'stim_strength':trial_info[3], 'choice':trial_info[6], 'correct':trial_info[7],
-                'response_hand':response_hand, 'time':time}
-        for idx, unit in units:
-            trial[unit] = data[:,idx]
-        return trial
-    return response_lock
-
-
-def tfr_adaptor(subject_files, select_data, freq=None, struct='freq'):
+def clean_anne_broadband(df):
     '''
-    Sits on top of a matlab file and returns a datamat to access it.
-
-    select_data : function that receives trialinfo and trialdata field. It returns
-        the data to be used for this trial and a dict containing metadata.
+    Clean up data frames from Anne's data.
     '''
-    trials = []
-    trial_id = 0
-    for subject, data in subject_files.iteritems():
-        for session, filename in data:
-            print filename
-            data = h5py.File(filename)
-            labels = []
-            for label in data[struct]['label'][:].T:
-                labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
-            trialinfo = data[struct]['trialinfo'][:,:]
-            trial_data = data[struct]['powspctrm']
-            trial_time = data[struct]['time'][:].flatten()
-            frequencies = data[struct]['freq'][:].flatten()
-            channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
-            # trial_data is a four dimensional matrix:
-            # time x frequency x sensors x trial
-            for trial_num in range(trial_data.shape[3]):
-                if freq is None:
-                    freq = zip(frequencies, frequencies)
-                for i, (low, high) in enumerate(freq):
-                    idx = (low<=frequencies) & (frequencies<=high)
-                    d = select_data(trialinfo[:, trial_num],
-                                    nanmean(trial_data[:, idx, :, trial_num],1), trial_time[:].flatten(), channels)
-                    print d.keys()
-                    d.update({'trial_id':array([trial_id])[0], 'subject':array([subject])[0], 'session':array([session])[0], 'freq':array([mean([low, high])])[0]})
-                    trials.append(d)
-                    trial_id += 1
-                sys.stdout.flush()
-    return trials, channels
+    df.index = df.index.droplevel(['trial onset', 'ref onset',
+                                 'interval onset', 'stim onset',
+                                 'feedback onset', 'feedback', 'response hand', 'response sample'])
+    return df
 
+def select(trial, start='trial onset', end=None, offset=0.0, baseline_start='trial onset', baseline_end='ref onset', baseline_offset=0.1):
+    '''
+    Select an epoch from a single trial, possibly with baseline correction.
+    '''
+    gtl =  lambda x: trial.index.get_level_values('time')[int(trial.index.get_level_values(x)[0])]
+    start_time = gtl(start)
+    end_time = start_time
 
+    if end is not None:
+        end_time = gtl(end)
+    end_time += offset
+    time = trial.index.get_level_values('time')
 
-def tolongform(trials, channels):
-    ### Now convert to long form.
-    length = len(channels)*len(trials)
+    if baseline_start is not None and baseline_end is not None:
+        baseline_start = gtl(baseline_start) + baseline_offset
+        baseline_end = gtl(baseline_end) - baseline_offset
+        mask_baseline = (baseline_start < time) & (time < baseline_end)
+        baseline = trial.loc[mask_baseline,:].mean()
+        trial -= baseline
 
-    width = trials[0][channels[0][1]].shape[0]
-    offset = 0
-    fields = set(trials[0].keys()) - set([c[1] for c in channels]) - set(['time'])
-    dm = {}
-    for field in fields:
-        print field, trials[0][field]
-        dm[field] = empty((length,), dtype=trials[0][field].dtype)
-    dm['data'] = nan*empty((length, width))
-    dm['unit'] = empty((length,), dtype='S16')
-    dm['time'] = 0*empty((length, width))
-    trialnum = 0
-    for trial in trials:
-        trialnum+=2
-        for idx, channel in channels:
-            for field in fields:
-                dm[field][offset] = trial[field]
-            dm['data'][offset,:] = trial[channel]
-            dm['time'][offset,:] = trial['time']
-            dm['unit'][offset] = channel
-            offset += 1
-    return datamat.VectorFactory(dm, {})
+    mask_trial = (start_time <= time) & (time <= end_time)
+    trial = trial.loc[mask_trial,:]
+    trial.loc[:, 'samplenr'] = arange(len(trial))
+    trial.set_index('samplenr', append=True, inplace=True)
+    # Adjust time index: Seems like an unnecessarily complex way of doing it.
+    ordering = list(set(trial.index.names) - set(['time'])) + ['time']
+    index = trial.index.reorder_levels(ordering)
+    new_time = linspace(0, end_time-start_time, len(trial))
+    for i in xrange(len(index.values)):
+        t = list(index.values[i][:-1]) + [new_time[i]]
+        index.values[i] = tuple(t)
+    trial.index = pd.MultiIndex.from_tuples(index.values, names=index.names)
+    return trial
 
-if __name__ == '__main__':
-    task = sys.argv[1]
-    sub = int(sys.argv[2])
-    if task == 'pre':
-        files = {sub:subject_files[sub]}
-        trials, channels = adaptor(files, get_response_lock(650))
-        dm = tolongform(trials, channels)
-        dm.save('P%02i.datamat'%sub)
-    elif task == 'tfr':
-        for file_name in tfr_files[sub]:
-            inp = {sub:[file_name]}
-            trials, channels = tfr_adaptor(inp, get_tfr_response_lock(), freq=[(8, 14), (14, 30), (60, 80)])
-            output_filename = file_name[1].split('/')[-1].split('.')[0]
-            print channels
-            print file_name
+def epoch(df, func):
+    dfs = []
+    for _, d in df.groupby(level='trial_index'):
+        dfs.append(func(d))
+    return pd.concat(dfs)
 
-            dm = tolongform(trials, channels)
-            dm.save('data/%s.datamat'%output_filename)
-            # Some of the time points have no valid tfr data. Kill it. This is a hack.
-            nantime =  unique(dm.time[isnan(dm.data)])
-            idnan = array([dm.time==a for a in nantime]).sum(0) > 0
-            if any(all(idnan,1)):
-                raise RuntimeError('Some trials have no valid data. Don\'t know what to do. Fix this. Aborting')
-            dm.data = dm.data[:, ~all(idnan,0)]
-            dm.time = dm.time[:, ~all(idnan,0)]
-            dm.save('data/%s.datamat'%output_filename)
+def subject(subject, files, selector):
+    dfs = []
+    for session_id, f in files:
+        session = h5py.File(f)
+        df = df_from_fieldtrip(session,
+            index_labels=['trial_index', 'trial onset', 'ref onset', 'interval onset', 'stimulus',
+                          'stim onset', 'response hand', 'choice', 'correct',
+                          'response sample', 'feedback', 'feedback onset', 'trial',
+                          'block', 'session', 'time'])
+        df = epoch(df, selector)
+        df.sort_index(inplace=True)
+        df = clean_anne_broadband(df)
+        # Add subject and session levels
+        df['session_num'] = session_id
+        df['subject'] = subject
+        df.set_index('session_num', append=True, inplace=True)
+        df.set_index('subject', append=True, inplace=True)
+        dfs.append(df)
+    return pd.concat(dfs)
 
-# Baseline: Mean spectrum before onset of first stim. [-300 : -100ms]
-# B2_bl_avg_tfr.m
+default_selector = lambda x: select(x, start='stim onset', offset=0.75)
