@@ -4,45 +4,52 @@ from numpy import *
 from random import choice as randsample
 from ocupy import datamat, spline_base
 from scipy.stats import norm
+
 '''
 Simulate an experiment similar to Mante 2013. A random dot display is
 presented where the dots have a motion coherence and a color coherence.
-Depending on the cue the monkeys have to attend either color or motion 
+Depending on the cue the monkeys have to attend either color or motion
 and they choose one of two options.
 '''
 
-time = arange(100)
+time = arange(1000)
 motion_coh = array([-1, 1])
 color_coh = array([-1, 1])
-bfcts = [s for s in spline_base.spline_base1d(100, 10)[0].T]
+bfcts = [s for s in spline_base.spline_base1d(max(time)+1, 10)[0].T]
 
 
-def make_trial(motion, color, choice, context, trial, unit=None):
+def make_trial(motion, color, trial, conditions, unit=None):
     '''
     Each unit has a template response to motion, color, choice, context.
     The template is a linear combination of gaussian basis functions.
     '''
-    conditions = [randsample(motion_coh), randsample(
-        color_coh), randsample([1, -1]), randsample([1, -1])]
-    resp = 0*ones((100, ))
-    for c_val, weights in zip(conditions, [motion, color, choice, context]):
+
+    resp = 0*time
+    for c_val, weights in zip(conditions, [motion, color]):
         resp += c_val*array([r*b for r, b in zip(weights, bfcts)]).sum(0)
-    resp = resp*linspace(0,1,len(resp))    
-    return {'data': resp + random.randn(len(time)) * (resp.mean() / 5.), 'mc': conditions[0], 'colorc': conditions[1], 'choice': conditions[2],
-            'ctxt': conditions[3], 'unit': unit, 'trial':trial}
+    x = linspace(0., 1, len(resp))
+    y = 1-(1-x)**2 +  1-(x-0.5)**2
+    y = y/max(y)
+
+    resp = resp* y
+    return {'data': resp + random.randn(len(time)) * max(abs(resp.mean()), 0.125), 'mc': conditions[0], 'colorc': conditions[1], 'unit': unit, 'trial':trial}
 
 
 def make_experiment(Ntrials, Nunits):
     units = datamat.AccumulatorFactory()
-    for n in range(Nunits):
-        # Each unit has a certain effect profile.
-        weights = [random.randn(len(bfcts)) for _ in range(4)]
-        _ = [
+
+    for trial in range(Ntrials):
+        conditions = [randsample(motion_coh), randsample(
+                          color_coh)]
+        for n in range(Nunits):
+            # Each unit has a certain effect profile.
+            weights = [random.randn(len(bfcts)) for _ in range(2)]
+            weights[0][-1] *= 0.8
+            weights[1][-1] *= 0.8
             units.update(
                 make_trial(
-                    *(weights+[trial]),
-                    unit=n)) for trial in range(Ntrials)]
-
+                    *(weights+[trial] + [conditions]),
+                    unit=n))
     return units.get_dm()
 
 def make_test_case(Ntrials, Nreps):
@@ -61,4 +68,3 @@ def make_test_case(Ntrials, Nreps):
             units.update(make_trial(*unit_b, unit=1+(n*2)))
 
     return units.get_dm()
-
