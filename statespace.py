@@ -7,19 +7,19 @@ Implements state space analysis from:
     Nature 503, 78–84 (2013).
 
 This implementation relies on a particular representation of your data. It expects
-a pandas DataFrame with a Multi-Index that encodes your conditions and the unit
-number, and that time is encoded in different columns.
+a pandas DataFrame with a Multi-Index that encodes your conditions and time
+number, and that units/sensors are encoded in different columns.
 
 For example a data frame like this one should work:
-  >>> data = arange(4*4*6).reshape((16,6)) # 3 factors (+unit encoding), 4 units, 6 time points
-  >>> units = [1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
-  >>> conditions = [[1,2,1,2]*4, [1,1,2,2]*4, [1,1,1,1]*4, units]
-  >>> index = pd.MultiIndex.from_arrays(conditions, names=['C1', 'C2', 'C3', 'unit'])
+  >>> data = arange(4*4*6).reshape((16,6)) # 3 factors (+time encoding), 4 time points, 6 units
+  >>> time = [1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4]
+  >>> conditions = [[1,2,1,2]*4, [1,1,2,2]*4, [1,1,1,1]*4, time]
+  >>> index = pd.MultiIndex.from_arrays(conditions, names=['C1', 'C2', 'C3', 'time'])
   >>> df = pd.DataFrame(data, index=index)
 
 Which looks like this:
                 0   1   2   3   4   5
-C1 C2 C3 unit
+C1 C2 C3 time
 1  1  1  1      0   1   2   3   4   5
 2  1  1  1      6   7   8   9  10  11
 1  2  1  1     12  13  14  15  16  17
@@ -34,12 +34,9 @@ implicit index requires to remember the meaning of each dimension which is a bad
 thing when you go back to the data a few weeks from now. Modern data structures
 like pandas.DataFrame allow efficient data manipulation while explicitly defining
 the semantics of the index (i.e. named indices and data dimensions). The above
-structure is a compromise between exploiting structure (time is represented
+structure is a compromise between exploiting structure (units are represented
 continuosly) and being able to use pandas. Maybe other projects will allow to
 annotate N-dimensional data soon (xray).
-
- I might switch unit and time soon. Seems to make more sense to have time as an
- index.
 '''
 
 import sys, logging
