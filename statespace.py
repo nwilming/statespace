@@ -39,7 +39,7 @@ continuosly) and being able to use pandas. Maybe other projects will allow to
 annotate N-dimensional data soon (xray).
 
  I might switch unit and time soon. Seems to make more sense to have time as an
- index. 
+ index.
 '''
 
 import sys, logging
@@ -58,19 +58,18 @@ def zscore(data):
     '''
     Z-score a dataset in place.
     '''
-    for n in unique(data.unit):
-        mu = nanmean(data.data[data.unit == n])
-        sigma = nanstd(data.data[data.unit == n])
-        data.data[data.unit == n] = (data.data[data.unit == n] - mu) / sigma
+    data -= data.mean()
+    data /= data.std()
+
 
 def regression_weights(data, formula):
     '''
     Estimate linear weights to predict a unit's activity from predictors.
 
-    data is a pandas.DataFrame that encodes time as colums and conditions and
-    units in it's index (i.e. a multi-index). The index needs to have the levels
-    'trial' and 'unit', the latter encodes the source of a data point ('sensor',
-    'cell' etc.)
+    data is a pandas.DataFrame that encodes sensors as colums and conditions and
+    time in it's index (i.e. a multi-index). The index needs to have the levels
+    'trial' and 'samplenr', the latter encodes the time of a sample unambigously
+    as an int.
 
     formula is patsy formula description to build a design matrix. The formula
     language is very similar to R's formula language.
@@ -82,15 +81,15 @@ def regression_weights(data, formula):
     '''
     ntime = data.shape[1]
 
-    def get_weights(group):
-        regs = patsy.dmatrix(formula, data=group.reset_index())
+    def get_weights(unit, unit_data):
+        regs = patsy.dmatrix(formula, data=unit_data.reset_index())
         labels = regs.design_info.column_names
         coefs = []
-        for time in group:
-            data = group[time]
+        for time, data  in unit_data.groupby(level='samplenr'):
             idx = isnan(data.values)
             next_entry = dict((name, nan) for name in labels)
-            next_entry['time'] = time
+            next_entry['samplenr'] = time
+            next_entry['unit'] = unit
             if not all(idx):
                 fit = linear_model.LinearRegression(
                     fit_intercept=False).fit(regs[~idx, :], data.values[~idx])
@@ -98,11 +97,15 @@ def regression_weights(data, formula):
                     next_entry[name] = value
             coefs.append(next_entry)
         df = pd.DataFrame(coefs)
-        return df.set_index(df.time)
+        return df.set_index(['samplenr', 'unit'])
 
-    betas_nt = data.groupby(level='unit').apply(get_weights)
-    del betas_nt['time']
+
+    dfs = []
+    for unit in data:
+        dfs.append(get_weights(unit, data[unit]))
+    betas_nt = pd.concat(dfs)
     return betas_nt
+
 
 def predict_unit(unit, formula, bnt):
     '''
@@ -117,26 +120,25 @@ def predict_unit(unit, formula, bnt):
     return pred
 
 
-def condition_matrix(data, conditions):
+def condition_matrix(data, conditions, filter=lambda x:gaussian_filter(x, 15)):
     '''
     Computes a matrix that contains concatenated time series (across conditions)
-    for each unit. The size of the matrix is Nunit x (Ntime * Nconditions)
+    for each unit. The size of the matrix is Nunit x (Nsamples * Nconditions)
 
     Input:
         data : pd.DataFrame
         conditions : list of condition names.
             The condition names in this list map to *levels* in the dataframe.
     Output:
-        Matrix : Nunit x (Ntime * Nconditions)
+        Matrix : Nunit x (Nsamples * Nconditions)
     '''
     maps = []
-    for _, condition in data.groupby(level=list(['colorc', 'mc', 'trial'])):
-        condition = condition.stack().to_frame()
-        condition.columns = ['data']
-        condition.index.set_names('time', level=-1, inplace=True)
-        m = condition.reset_index().pivot_table(values='data', index='unit', columns='time').values
-        maps.append(m)
-    return hstack(maps)
+    for _, condition in data.groupby(level=list(conditions)):
+        condition = condition.groupby(level='samplenr').mean()
+        if filter is not None:
+            condition = condition.apply(filter)
+        maps.append(condition)
+    return vstack(maps).T
 
 
 def pca_cleaning(X, N_components=12):
@@ -182,7 +184,7 @@ def regression_embedding(bnt, D, factors):
     '''
     Bmax, bmax_list, norms, maps, = [], [], [], []
     for factor in factors:
-        coefs = bnt[factor].unstack().values
+        coefs = bnt[factor].unstack().values.T
         b = [dot(D, coefs[:, i]) for i in range(coefs.shape[1])]
         maps.append(array(b))
         norm_b = [linalg.norm(bb) for bb in b]
@@ -214,7 +216,6 @@ def embedd(data, formula, conditions=None, N_components=12):
         logging.info("Using this condition ordering: " + ' + '.join(conditions))
 
     logging.info('Building condition matrix')
-    print data.groupby(level=['mc', 'colorc'])
     X = condition_matrix(data, set(conditions) - set(['Intercept']))
 
     logging.info('Doing PCA cleaning')
@@ -225,29 +226,11 @@ def embedd(data, formula, conditions=None, N_components=12):
 
     return Q, Bmax, bnt, D, t_bmax, norms, maps, exp_var, pca
 
-
-def get_trajectory (data, conditions, axis1, axis2, time=None):
+def get_trj(data, axis1, axis2):
     '''
-    Project a condition into the state space.
+    Project a conditon into the state space.
 
-    Input:
-        data : ocupy.datamat
-            A datamat that contains for each (trial x unit) one entry. The datamat needs
-            to contain a field 'data' that encodes time in the 2nd dimension.
-            The field 'units' encodes the unit number. Long story short, it
-            stores the data in long format.
-        conditions : dict
-            This dict determines which conditions are projected into the state
-            space. The dict contains field names of the datamats as keys and
-            admissible values as values.
+    data needs to be a num_unit x time matrix, axis1 and axis2 are vectors that
+    define axes in state space.
     '''
-    results = {}
-    for i, condition in enumerate(conditions):
-        population_activity = condition_matrix(data, [condition])
-        assert population_activity.shape[1] == data.data.shape[1]
-        vax1 = dot(axis1, population_activity)
-        vax2 = dot(axis2, population_activity)
-        if time is None:
-            time = arange(len(vax1))
-        results[str(condition)] = (vax1, vax2, time)
-    return results
+    return dot(axis1, data), dot(axis2, data)
