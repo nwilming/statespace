@@ -1,3 +1,9 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+'''
+Analysis scripts for Anne's data.
+'''
+
 import h5py
 from numpy import *
 import pandas as pd
@@ -5,42 +11,37 @@ from itertools import product as iproduct
 import glob, os, sys
 from pylab import *
 import statespace as st
-
-subjects = [12, 13, 15, 16, 17, 10, 9, 8, 2, 3, 6, 7, 4, 5, 20, 21, 14, 19, 18]
-subject_files = {}
-tfr_files = {}
-for sub in subjects:
-    sessions =  glob.glob('/Volumes/dump/Data-Anne/P%02i*cleandata.mat'%sub)
-    subject_files[sub] = zip(range(len(sessions)), sessions)
-    sessions = glob.glob('/home/aurai/Data/MEG-PL/P%02i/MEG/TFR/*_all_freq.mat'%sub)
-    tfr_files[sub] = zip(range(len(sessions)), sessions)
+import analysis
+import sklearn
+from sklearn.lda import LDA
+from sklearn.qda import QDA
+import decoding as dcd
 
 
-def df_from_fieldtrip(data, index_labels=None):
-    '''
-    Read a fieldtrip data structure into a data frame.
-    '''
-    collect = []
-    index = []
-    labels = []
-    for label in data['data']['label'][:].T:
-        labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
-    trialinfo = data['data']['trialinfo'][:,:]
-    trial_data = data['data']['trial']
-    trial_time = data['data']['time']
-    channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
-    for j, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):
-        td_vals = data[td[0]] # this is the data for this trial
-        tt_vals = data[tt[0]] # this is the time for this trial
-        ind = tile(ti, (len(tt_vals), 1))
-        ind = hstack((tt_vals[:]*0+j, ind, tt_vals))
-        index.append(ind)
-        collect.append(td_vals)
-    index = vstack(index)
-    collect = vstack(collect)
-    ind = pd.MultiIndex.from_arrays(index.T, names=index_labels)
-    ind_col = pd.MultiIndex.from_arrays([labels], names='Sensors')
-    return pd.DataFrame(collect, index=ind, columns=ind_col)
+response_selector = lambda x: analysis.select(x, start='response sample', end='response sample', offset=(-0.5, 0),
+                                           baseline_start='trial onset', baseline_end='ref onset',
+                                           baseline_offset=(0.1, -0.1))
+first_stim = lambda x: analysis.select(x, start='ref onset', end='ref onset', offset=(0, 0.75),
+                                           baseline_start='trial onset', baseline_end='ref onset',
+                                           baseline_offset=(0.1, -0.1))
+second_stim = lambda x: analysis.select(x, start='stim onset', end='stim onset', offset=(0, 0.75),
+                                           baseline_start='trial onset', baseline_end='ref onset',
+                                           baseline_offset=(0.1, -0.1))
+selectors = {'response':response_selector, 'first':first_stim, 'second':second_stim}
+
+classifier = {'SVM':sklearn.svm.SVC,
+            #'logistic': lambda: sklearn.linear_model.LogisticRegressionCV(cv=10, dual=False, class_weight='auto', n_jobs=-1),
+            'lda': lambda: LDA(),
+            'qda': lambda: QDA()}
+
+def parse_data(location='/Volumes/dump/Data-Anne/P%02i*cleandata.mat', subjects=[2]):
+    subject_files = {}
+    for sub in subjects:
+        sessions =  glob.glob(location%sub)
+        subject_files[sub] = zip(range(len(sessions)), sessions)
+    return subject_files
+
+rawdata = parse_data()
 
 def clean_anne_broadband(df):
     '''
@@ -51,64 +52,129 @@ def clean_anne_broadband(df):
                                  'feedback onset', 'feedback', 'response hand', 'response sample'])
     return df
 
-def select(trial, start='trial onset', end=None, offset=0.0, baseline_start='trial onset', baseline_end='ref onset', baseline_offset=0.1):
+
+def process_subject(subject, files, filter):
     '''
-    Select an epoch from a single trial, possibly with baseline correction.
+    Load a fieldtrip for a subject, parse it into a dataframe, epoch it and clean up
+    unnecessary fields.
+
+    Input:
+        subject: Subject short code (e.g. a number or what not)
+        files: A list of data files for this subject.
+            The list has the format [(id, filename), ...]. The id is used to
+            identify sessions in the resulting dataframe.
+        filter: Function
+            A function that selects a subset of data for each trial. It accepts
+            a single dataframe that contains data for one trial and returns
+            a single dataframe.
     '''
-    gtl =  lambda x: trial.index.get_level_values('time')[int(trial.index.get_level_values(x)[0])]
-    start_time = gtl(start)
-    end_time = start_time
-
-    if end is not None:
-        end_time = gtl(end)
-    end_time += offset
-    time = trial.index.get_level_values('time')
-
-    if baseline_start is not None and baseline_end is not None:
-        baseline_start = gtl(baseline_start) + baseline_offset
-        baseline_end = gtl(baseline_end) - baseline_offset
-        mask_baseline = (baseline_start < time) & (time < baseline_end)
-        baseline = trial.loc[mask_baseline,:].mean()
-        trial -= baseline
-
-    mask_trial = (start_time <= time) & (time <= end_time)
-    trial = trial.loc[mask_trial,:]
-    trial.loc[:, 'samplenr'] = arange(len(trial))
-    trial.set_index('samplenr', append=True, inplace=True)
-    # Adjust time index: Seems like an unnecessarily complex way of doing it.
-    ordering = list(set(trial.index.names) - set(['time'])) + ['time']
-    index = trial.index.reorder_levels(ordering)
-    new_time = linspace(0, end_time-start_time, len(trial))
-    for i in xrange(len(index.values)):
-        t = list(index.values[i][:-1]) + [new_time[i]]
-        index.values[i] = tuple(t)
-    trial.index = pd.MultiIndex.from_tuples(index.values, names=index.names)
-    return trial
-
-def epoch(df, func):
     dfs = []
-    for _, d in df.groupby(level='trial_index'):
-        dfs.append(func(d))
-    return pd.concat(dfs)
-
-def subject(subject, files, selector):
-    dfs = []
+    trial_offset = 0
     for session_id, f in files:
         session = h5py.File(f)
-        df = df_from_fieldtrip(session,
+        df = analysis.df_from_fieldtrip(session,
             index_labels=['trial_index', 'trial onset', 'ref onset', 'interval onset', 'stimulus',
                           'stim onset', 'response hand', 'choice', 'correct',
                           'response sample', 'feedback', 'feedback onset', 'trial',
-                          'block', 'session', 'time'])
-        df = epoch(df, selector)
+                          'block', 'session', 'time'], select=filter)
         df.sort_index(inplace=True)
-        df = clean_anne_broadband(df)
         # Add subject and session levels
         df['session_num'] = session_id
         df['subject'] = subject
+        df['unique_trial'] = df.index.get_level_values('trial_index')+trial_offset
+        trial_offset = df['unique_trial'].max()
         df.set_index('session_num', append=True, inplace=True)
         df.set_index('subject', append=True, inplace=True)
+        df.set_index('unique_trial', append=True, inplace=True)
         dfs.append(df)
     return pd.concat(dfs)
 
-default_selector = lambda x: select(x, start='stim onset', offset=0.75)
+def save_subject(save_dir, subject):
+    files = rawdata[subject]
+    df = process_subject(subject, files)
+    save_file = os.path.join(save_dir, 'P%02i_data.hdf'%subject)
+    df.to_hdf(save_file, 'raw')
+    del df
+
+def estimate_state_space(cross_validator, selector):
+    pass
+
+
+def average_trials_by_label(data, level, N, foreach=['samplenr', 'session_num']):
+    '''
+    Average trials of a certain condition to trade off noise vs. sample size.
+    '''
+    #return pd.concat([df.groupby(lambda x: mod(x, N), level='trial_index').mean()
+    #            for a, df in data.groupby(level=foreach+[level], as_index=True)])
+    if isinstance(level, basestring):
+        level = [level]
+    levels = foreach + level
+    res = []
+    for a, df in data.groupby(level=levels):
+        idx = df.index.get_level_values('trial_index')
+        s = array([0] + cumsum(diff(idx)!=0).tolist())  //N
+        for trial, val in  df.groupby(s):
+            #import pdb; pdb.set_trace()
+            #res.append(val.mean())
+            #print df
+            val=val.mean().to_frame().T
+            val['trial_index'] = trial
+            for name, value in zip(levels, a):
+                val[name] = value
+            val.set_index(levels+['trial_index'], inplace=True)
+            res.append(val)
+    return pd.concat(res)
+
+
+def droplevels(df):
+    '''
+    Remove unnecessary things for now.
+    '''
+    df.index = df.index.droplevel([u'stim onset', u'feedback', u'feedback onset',
+        u'ref onset', u'trial onset', u'session', u'block', u'interval onset',
+        u'response sample', u'response hand', u'time'])
+    return df
+
+
+def decoding(filename, epochs, classifier={'SVM':sklearn.svm.SVC}):
+    '''
+    Perform decoding.
+    '''
+    results = pd.DataFrame()
+    import sys
+    for epoch in epochs:
+        df = pd.read_hdf(filename, epoch)
+        for target_field in ['choice', 'stimulus']:
+            for name, clsf in classifier.iteritems():
+                print epoch, target_field, name
+                sys.stdout.flush()
+                chunker = dcd.leave_one_out(df, 'session_num')
+                accuracy = dcd.do(chunker, clsf, target_field)
+                accuracy['eppoch'] = epoch
+                accuracy['target_field'] = target_field
+                accuracy['classifier'] = name
+                results = pd.concat([results, accuracy])
+                results.to_hdf('/Volumes/dump/Data-Anne/minified/P02_data.hdf', 'decoding')
+    return results
+
+
+def plot_accuracy(data):
+    epoch_times = {'first':linspace(0, 0.75, 451), 'second':linspace(1, 1.75, 451),
+        'response':linspace(2, 2.5, 301)}
+    colors = {'choice':'r', 'stimulus':'b'}
+    for i, (c, classifier) in enumerate(data.groupby(['classifier'])):
+        subplot(3,1,i+1)
+        title(c)
+        for (cond, target), d in classifier.groupby(['eppoch', 'target_field']):
+            acc = dcd.accuracy(d)
+            plot(epoch_times[cond], acc.mean(1), colors[target], label=target)
+        ylim([0, 1.])
+    legend()
+
+def filter_and_process_subs(save_dir, subject):
+    save_file = os.path.join(save_dir, 'P%02i_data.hdf'%subject)
+    for name, filter in selectors.iteritems():
+        df = process_subject(subject, rawdata[subject], filter)
+        df.to_hdf(save_file, name)
+        del df
+        print 'Finished %s'%name

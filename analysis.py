@@ -5,188 +5,88 @@ TODOs:
     - baseline correction (single trial vs. average)
     - cross validation
 '''
-
 import h5py
 from numpy import *
-from ocupy import datamat
-import glob
-import os
+import pandas as pd
+from itertools import product as iproduct
+import glob, os, sys
+from pylab import *
 import statespace as st
-import cPickle
 
 
-valid_conditions = [{'choice': -1, 'stim_strength': -1},
-                    {'choice': 1, 'stim_strength': -1},
-                    {'choice': -1, 'stim_strength': 1},
-                    {'choice': 1, 'stim_strength': 1}]
+def _trial_to_df(trial_index, data, td, ti, tt, labels, index_labels=None):
+    td_vals = data[td[0]] # this is the data for this trial
+    tt_vals = data[tt[0]] # this is the time for this trial
+    ind = tile(ti, (len(tt_vals), 1))
+    ind = hstack((tt_vals[:]*0+trial_index, ind, tt_vals))
+    ind = pd.MultiIndex.from_arrays(ind.T, names=index_labels)
+    ind_col = pd.MultiIndex.from_arrays([labels], names='Sensors')
+    return pd.DataFrame(td_vals[:,:], index=ind, columns=ind_col)
 
-# valid_conditions = [{'choice': -1},
-#   {'choice': 1}, {'stim_strength':1}, {'stim_strength':-1}]
 
-
-def _load_and_prep_data(input, channels, freq=None):
+def df_from_fieldtrip(data, index_labels=None, select=lambda x:x):
     '''
-    Loads a datamat, filters by channels, averages across frequencies if needed
+    Read a fieldtrip data structure into a data frame.
     '''
-    dm = datamat.load(input, 'Datamat')
-    if freq is not None:
-        if freq not in unique(dm.freq):
-            raise RuntimeError('Selected frequency not in data. Available frequencies: ' + str(unique(dm.freq)))
-        dm = dm[dm.freq == freq]
-    if channels is not None:
+    collect = []
+    labels = []
+    for label in data['data']['label'][:].T:
+        labels.append(''.join([unichr(t) for t in data[label[0]]]).encode('utf8'))
+    trialinfo = data['data']['trialinfo'][:,:]
+    trial_data = data['data']['trial']
+    trial_time = data['data']['time']
+    channels = [(i, t) for i, t in zip(range(len(labels)), labels) if t.startswith('M')]
+    for trial_index, (td, ti, tt) in enumerate(zip(trial_data, trialinfo.T, trial_time)):
+        collect.append(
+            select(_trial_to_df(trial_index, data, td, ti, tt, labels, index_labels)))
+    return pd.concat(collect)
 
-        idx = in1d(dm.unit, channels)
-        dm = dm[idx]
-        assert len(unique(dm.unit)) == len(channels)
-    # Need to identify no nan starting point
+
+
+def select(trial, start='trial onset', end=None, offset=(0, 0),
+           baseline_start='trial onset', baseline_end='ref onset',
+           baseline_offset=(0, 0)):
     '''
-    a = array([st.conmean(dm, **v) for v in valid_conditions])
-    try:
-        idend = where(sum(isnan(a),0) > 0)[0][0]
-        print 'The no nan end point is:', idend
-        dm.data = dm.data[:, 0:idend]
-    except IndexError:
-        pass
+    Select an epoch from a single trial, possibly with baseline correction.
     '''
-    return dm
+    gtl =  lambda x: trial.index.get_level_values('time')[int(trial.index.get_level_values(x)[0])]
+    # Start point selection:
+    assert (start is not None) and (end is not None)
+    start_time = gtl(start) + offset[0]
+    end_time = gtl(end) + offset[1]
+
+    time = trial.index.get_level_values('time')
+
+    if (baseline_start is not None) and (baseline_end is not None):
+        baseline_start = gtl(baseline_start) + baseline_offset[0]
+        baseline_end = gtl(baseline_end) + baseline_offset[1]
+        mask_baseline = (baseline_start < time) & (time < baseline_end)
+        baseline = trial.loc[mask_baseline,:].mean()
+        trial -= baseline
+
+    mask_trial = (start_time <= time) & (time <= end_time)
+    trial = trial.loc[mask_trial,:]
+    trial.loc[:, 'samplenr'] = arange(len(trial))
+    trial.set_index('samplenr', append=True, inplace=True)
+    # Adjust time index: Seems like an unnecessarily complex way of doing it.
+    ordering = list(set(trial.index.names) - set(['time'])) + ['time']
+    index = trial.index.reorder_levels(ordering)
+    new_time = linspace(0, end_time-start_time, len(trial))
+    for i in xrange(len(index.values)):
+        t = list(index.values[i][:-1]) + [new_time[i]]
+        index.values[i] = tuple(t)
+    trial.index = pd.MultiIndex.from_tuples(index.values, names=index.names)
+    return trial
 
 
-def find_embedding(dm, valid_conditions, formula='choice+stim_strength+1'):
-    '''
-    Find a subspace embedding for data set dm.
-    '''
-    st.zscore(dm)
-    Q, Bmax, labels, bnt, D, t_bmax, norms, maps, exp_var = st.embedd(dm,
-        formula, valid_conditions, N_components=3)
-    return {'Q': Q, 'Bmax': Bmax, 'labels': labels,
-            't_bmax': t_bmax, 'norms': norms, 'maps': maps, 'D': D,
-            'valid_conditions': valid_conditions, 'exp_var': exp_var}
+def epoch(df, func):
+    dfs = []
+    for _, d in df.groupby(level='trial_index'):
+        dfs.append(func(d))
+    return pd.concat(dfs)
 
-
-def apply_embedding(dm, Q=None, Bmax=None, labels=None, D=None, t_bmax=None,
-                    norms=None, maps=None, exp_var=None, **kwargs):
-    '''
-    Apply an embedding to a dataset to generate a state space trajectory.
-    '''
-    st.zscore(dm)
-    # Make sure we are dealing with trials that are timelocked.
-    assert sum(dm.time-dm.time[0]) <= finfo(float).eps
-    results = st.get_trajectory(dm,
-                                valid_conditions,
-                                Q[:, 1], Q[:, 2], time=dm.time[0])
-    results.update({'Q': Q, 'Bmax': Bmax, 'labels': labels,
-                    't_bmax': t_bmax, 'norms': norms, 'maps': maps, 'D': D,
-                    'valid_conditions': valid_conditions, 'exp_var': exp_var})
-    return results
-
-
-def tolongform(trjs, condition_mapping, axislabels, select_samples=None):
-    '''
-    trjs is a (subject code, trajectory dict) tuple
-    '''
-    if select_samples is None:
-        select_samples = lambda x: x
-    conditions = condition_mapping.keys()
-    dm = datamat.DatamatAccumulator()
-    for cond_nr,  cond in enumerate(conditions):
-        for subject, filename, trj in trjs:
-            ax1 = select_samples(trj[cond][0])
-            ax2 = select_samples(trj[cond][1])
-            time = select_samples(trj[cond][2])
-            ax1label, ax2label = axislabels
-            data = concatenate((ax1, ax2))
-            axes = concatenate(([ax1label]*len(ax1), [ax2label]*len(ax1)))
-            time = concatenate((time, time))
-            trial = {'subject': 0*data+subject,
-                     'condition': array(
-                                        [condition_mapping[cond]]*len(axes),
-                                        dtype='S64'),
-                     'data': data,
-                     'encoding_axis': axes,
-                     'time': time}
-
-            dm.update(datamat.VectorFactory(trial, {}))
-    dm = dm.get_dm()
-    dm.add_field('used_hand', mod(dm.subject, 2) == 0)
-    return dm, conditions
-
-
-if __name__ == '__main__':
-
-    from optparse import OptionParser
-    parser = OptionParser('python analze.py subject_number')
-    parser.add_option('--data-dir', dest='data_dir', default='data/')
-    parser.add_option('--glob-str', dest='glob_string',
-                      default='P%02i_*freq.dm',
-                      help='Search pattern for globbing for subject data.')
-    parser.add_option('-s', '--sensors', dest='sensor_selection',
-                      default=None,
-                      help='Restrict to a set of sensors. Valid values are "occ" and "motor"')
-    parser.add_option('-f', '--freq', dest='frequency',
-                      type=float, default=None,
-                      help='Choose a frequency to analyze if you use tfr data.')
-    parser.add_option('-Q', '--apply-q', dest='applyQ',
-                      type=str, default=None,
-                      help='Specify a data file from which Q matrix is loaded. This needs to be a trajectory estimate from a previous run.')
-    parser.add_option('--dry-run', dest='dry_run', action='store_true',
-                      default=False)
-    parser.add_option('--suffix', dest='suffix', default='',
-                      help='Suffix to append to trajectory')
-    (options, args) = parser.parse_args()
-    if len(args) == 0:
-        parser.error('Subject number is required')
-    subject = int(args[0])
-    channel_selection = None
-    if options.sensor_selection == 'occ':
-        channel_selection = [
-                'MLP41', 'MPL31', 'MZP01', 'MRP31', 'MRP41', 'MLP53', 'MLP52',
-                'MPL51', 'MRP51', 'MRP52', 'MRP53', 'MLO12', 'MLO11', 'MZO01',
-                'MRO11', 'MRO12', 'MLO23', 'MLO22', 'MLO21', 'MRO21', 'MRO22',
-                'MRO23', 'MLO32', 'MLO31', 'MZO02', 'MRO31', 'MRO32', 'MRP56',
-                'MRP55', 'MRP54', 'MRP44', 'MRP43', 'MRP42', 'MRP34', 'MRP33',
-                'MRP32', 'MRP22', 'MRP21', 'MRP11', 'MRP31', 'MZC04', 'MLP56',
-                'MLP55', 'MLP54', 'MLP44', 'MLP43', 'MLP42', 'MLP34', 'MLP33',
-                'MLP32', 'MLP22', 'MLP21', 'MLP11', 'MLP31']
-    elif options.sensor_selection == 'motor':
-        channel_selection = [
-                'MLC21', 'MLC22', 'MLC52', 'MLC41', 'MLC23', 'MLC53', 'MLC31',
-                'MLC24', 'MLC16', 'MLC25', 'MLC32', 'MLC42', 'MLC54', 'MLC55',
-                'MLP12', 'MLP23', 'MRC21', 'MRC22', 'MRC52', 'MRC41', 'MRC23',
-                'MRC53', 'MRC31', 'MRC24', 'MRC16', 'MRC25', 'MRC32', 'MRC42',
-                'MRC54', 'MRC55', 'MRP12', 'MRP23']
-    else:
-        if options.sensor_selection is not None:
-            raise RuntimeError('did not understand the sensor selection argument. valid options are "occ" and "motor"')
-
-    if '%' in options.glob_string:
-        options.glob_string = options.glob_string % subject
-    options.glob_string = os.path.join(options.data_dir, options.glob_string)
-    input_files = glob.glob(options.glob_string)
-    if options.frequency is None:
-        output_files = [''.join(inp.split('.')[:-1]) +
-                        '%s.trajectory' % options.suffix for inp in input_files]
-    else:
-        output_files = [''.join(inp.split('.')[:-1]) +
-                        '_FR%3.1f_' % options.frequency +
-                        '%s.trajectory' % options.suffix for inp in input_files]
-
-    print 'Using %s for globbing'%options.glob_string
-    print 'Selected the following files for analysis:'
-    for inp, out in zip(input_files, output_files):
-        print inp, '->', out
-    if options.applyQ is None:
-        print 'Estimating Q embedding matrix for each of these files.'
-    else:
-        print 'Loading Q matrix from file. Applying this embedding to the above files.', options.applyQ
-        embedding = cPickle.load(open(options.applyQ))
-
-    if not options.dry_run:
-        for inp, out in zip(input_files, output_files):
-            print 'Working'
-            print inp, '->', out
-            dm = _load_and_prep_data(inp, channel_selection, freq=options.frequency)
-            if options.applyQ is None:
-                results = find_embedding(dm, valid_conditions)
-            else:
-                results = apply_embedding(dm, **embedding)
-            cPickle.dump(results, open(out, 'w'))
+def downsample_with_averaging(df, window_size, nth=10):
+    d = []
+    for a,b in df.groupby(level=['session_num', 'trial_index']):
+        d.append( pd.rolling_mean(b, window_size).loc[::nth,:])
+    return pd.concat(d)
