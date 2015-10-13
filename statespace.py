@@ -59,7 +59,7 @@ def zscore(data):
     data /= data.std()
 
 
-def regression_weights(data, formula):
+def regression_weights(data, formula, time_label='samplenr'):
     '''
     Estimate linear weights to predict a unit's activity from predictors.
 
@@ -82,10 +82,10 @@ def regression_weights(data, formula):
         regs = patsy.dmatrix(formula, data=unit_data.reset_index())
         labels = regs.design_info.column_names
         coefs = []
-        for time, data  in unit_data.groupby(level='samplenr'):
+        for time, data  in unit_data.groupby(level=time_label):
             idx = isnan(data.values)
             next_entry = dict((name, nan) for name in labels)
-            next_entry['samplenr'] = time
+            next_entry[time_label] = time
             next_entry['unit'] = unit
             if not all(idx):
                 fit = linear_model.LinearRegression(
@@ -94,7 +94,7 @@ def regression_weights(data, formula):
                     next_entry[name] = value
             coefs.append(next_entry)
         df = pd.DataFrame(coefs)
-        return df.set_index(['samplenr', 'unit'])
+        return df.set_index([time_label, 'unit'])
 
 
     dfs = []
@@ -117,7 +117,7 @@ def predict_unit(unit, formula, bnt):
     return pred
 
 
-def condition_matrix(data, conditions, filter=lambda x:gaussian_filter(x, 15)):
+def condition_matrix(data, conditions, filter=lambda x:gaussian_filter(x, 15), time_label='samplenr'):
     '''
     Computes a matrix that contains concatenated time series (across conditions)
     for each unit. The size of the matrix is Nunit x (Nsamples * Nconditions)
@@ -131,7 +131,7 @@ def condition_matrix(data, conditions, filter=lambda x:gaussian_filter(x, 15)):
     '''
     maps = []
     for _, condition in data.groupby(level=list(conditions)):
-        condition = condition.groupby(level='samplenr').mean()
+        condition = condition.groupby(level=time_label).mean()
         if filter is not None:
             condition = condition.apply(filter)
         maps.append(condition)
@@ -193,7 +193,8 @@ def regression_embedding(bnt, D, factors):
     Q, r = linalg.qr(Bmax)
     return Q, Bmax, bmax_list, norms, maps
 
-def embedd(data, formula, conditions=None, N_components=12):
+def embedd(data, formula, conditions=None, N_components=12,
+            time_label='samplenr', filter=lambda x:gaussian_filter(x, 15)):
     '''
     Statespace analysis wrapper function. Use this function for your analysis.
 
@@ -202,7 +203,7 @@ def embedd(data, formula, conditions=None, N_components=12):
         formula: Patsy formula that defines the regression model.
     '''
     logging.info('Getting regression weights')
-    bnt = regression_weights(data, formula)
+    bnt = regression_weights(data, formula, time_label=time_label)
 
     if conditions is None:
         conditions = [f for f in bnt.columns]
@@ -213,7 +214,8 @@ def embedd(data, formula, conditions=None, N_components=12):
         logging.info("Using this condition ordering: " + ' + '.join(conditions))
 
     logging.info('Building condition matrix')
-    X = condition_matrix(data, set(conditions) - set(['Intercept']))
+    X = condition_matrix(data, set(conditions) - set(['Intercept']), time_label=time_label,
+                         filter=filter)
 
     logging.info('Doing PCA cleaning')
     Xpca, D, exp_var, pca = pca_cleaning(X, N_components)
@@ -221,7 +223,34 @@ def embedd(data, formula, conditions=None, N_components=12):
     logging.info('Regression embedding')
     Q, Bmax, t_bmax, norms, maps = regression_embedding(bnt, D, conditions)
 
-    return Q, Bmax, bnt, D, t_bmax, norms, maps, exp_var, pca
+    return Q, Bmax, bnt, D, t_bmax, norms, maps, exp_var, pca, X
+
+
+def cv_trajectory(chunker, formula,
+        group_test_by=None,
+        N_components=12,
+        time_label='samplenr', axis_names=None, filter=lambda x:gaussian_filter(x, 15)):
+    '''
+    '''
+    accs = {}
+    Qs = []
+    for i,(train, test) in enumerate(chunker):
+        Q = embedd(train, 'mc+colorc+1', time_label='time', filter=filter)[0]
+        if axis_names is None:
+            axis_names = Q.column_names[:2]
+
+        ax1, ax2 = Q.get_axis(axis_names[0]), Q.get_axis(axis_names[1])
+        for condition, data in test.groupby(level=group_test_by):
+
+            c_data = condition_matrix(data, group_test_by, time_label='time', filter=filter)
+            if condition not in accs:
+                accs[condition] = []
+            xmc, ycc = get_trj(c_data, ax1, ax2)
+            accs[condition].append([xmc, ycc])
+        Qs.append(Q)
+    return dict((k, array(v)) for k, v in accs.iteritems()), axis_names, Qs
+
+
 
 def get_trj(data, axis1, axis2):
     '''
@@ -231,3 +260,6 @@ def get_trj(data, axis1, axis2):
     define axes in state space.
     '''
     return dot(axis1, data), dot(axis2, data)
+
+def get_cov():
+    pass

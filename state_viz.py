@@ -21,7 +21,8 @@ def make_2Dplot(df, colors=None, errors=False, agg=None, time_frame=None):
     conditions = []
     leg = []
     ax1label, ax2label = unique(df.encoding_axis)
-
+    axvline(color='k')
+    axhline(color='k')
     for i, (cond, df_c) in enumerate(df.groupby('condition', sort=False)):
         ax1 = df_c[df_c.encoding_axis == ax1label].pivot('subject', 'time', 'data').values
         ax2 = df_c[df_c.encoding_axis == ax2label].pivot('subject', 'time', 'data').values
@@ -53,8 +54,92 @@ def make_2Dplot(df, colors=None, errors=False, agg=None, time_frame=None):
         plot(x[0, :], y[0, :], color=colors[i], marker='s', linestyle='None')
         plot(x[-1, :], y[-1, :], color=colors[i], marker='>', linestyle='None')
         conditions.append(cond)
-    axvline(color='k')
-    axhline(color='k')
+
     legend(leg, conditions)
     xlabel(ax1label)
     ylabel(ax2label)
+
+
+
+def plot_population_activity(data, factors, axis1, axis2,
+                             legend=False, epochs=None):
+    import seaborn as sns
+    conditions = list(dict_product(factors))
+    colors = sns.color_palette('muted', len(conditions))
+    symbols = ['-', '--', '-.', ':']
+    leg = []
+    for i, condition in enumerate(conditions):
+        population_activity = condition_matrix(data, [condition])
+        assert population_activity.shape[1] == data.data.shape[1]
+        vax1 = dot(axis1, population_activity)
+        vax2 = dot(axis2, population_activity)
+        if epochs is None:
+            h = plt.plot(vax1, vax2, color=colors[i])[0]
+            plt.plot(vax1[0], vax2[0], 'o', color=colors[i])
+            plt.plot(vax1[-1], vax2[-1], 'D', color=colors[i])
+        else:
+            for j, (low, high) in enumerate(epochs):
+                h = plt.plot(vax1[low:high],
+                             vax2[low:high], ls=symbols[j % len(symbols)],
+                             color=colors[i])[0]
+                plt.plot(vax1[low], vax2[low], 'o', color=colors[i])
+                plt.plot(vax1[high], vax2[high], 'D', color=colors[i])
+
+        leg.append((h, str(condition)))
+    if legend:
+        plt.legend([l[0] for l in leg], [l[1] for l in leg])
+    return [l[0] for l in leg], [l[1] for l in leg]
+
+
+def trellis_plot(data, Q, labels, condition, Bmax=None):
+    import matplotlib
+    gs = matplotlib.gridspec.GridSpec(3, 3)
+    for k in range(1, Q.shape[1]):
+        for j in range(Q.shape[1]-1):
+            plt.subplot(gs[k-1, j])
+            if k <= j:
+                plt.xticks([])
+                plt.yticks([])
+                plt.xlabel('')
+                plt.ylabel('')
+                continue
+            leg = plot_population_activity(
+                data,
+                condition,
+                Q[:, k], Q[:, j])
+
+            plt.xlabel('%s' % labels[k])
+            plt.ylabel('%s' % labels[j])
+            if Bmax is not None:
+                a = dot(Q[:, [k, j]].T, Bmax[:, [k, j]])
+                plt.plot([-a[1, 0], a[1, 0]], [-a[1, 1], a[1, 1]], 'k--')
+                plt.plot([-a[0, 0], a[0, 0]], [-a[0, 1], a[0, 1]], 'k--')
+                plt.axis('equal')
+    plt.subplot(gs[0, 2])
+    plt.legend(leg[0], leg[1])
+    plt.xticks([])
+    plt.yticks([])
+    plt.xlabel('')
+    plt.ylabel('')
+
+
+def characterize_population(data, bnt, factors, Q):
+    conditions = list(dict_product(factors))
+    gs = matplotlib.gridspec.GridSpec(
+            len(conditions) + 1, len(unique(data.unit)))
+    for i, cond in enumerate(conditions):
+        d = dict_filter(data, cond)
+        for iu, u in enumerate(d.by_field('unit')):
+            plt.subplot(gs[i, iu])
+            plt.plot(u.data.T.mean(0), 'k', alpha=0.5)
+            plt.ylim([-max(absolute(plt.ylim())), max(absolute(plt.ylim()))])
+            plt.plot(plt.xlim(), [0, 0], 'k--')
+            plt.xticks([])
+            plt.yticks([])
+            if iu == 0:
+                plt.ylabel(str(cond))
+    for iu, unit in enumerate(unique(data.unit)):
+        plt.subplot(gs[len(conditions), iu])
+        bs = [bnt[unit, t] for t in range(bnt.shape[1])]
+        plt.plot(array(bs)[:, (0, 2)])
+        plt.legend(factors.keys())

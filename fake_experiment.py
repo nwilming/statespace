@@ -2,7 +2,8 @@
 # In each trial color has a certain effect, motion, choice and context.
 from numpy import *
 from random import choice as randsample
-from ocupy import datamat, spline_base
+from ocupy import spline_base
+import pandas as pd
 from scipy.stats import norm
 
 '''
@@ -12,13 +13,13 @@ Depending on the cue the monkeys have to attend either color or motion
 and they choose one of two options.
 '''
 
-time = arange(1000)
+time = arange(100)
 motion_coh = array([-1, 1])
 color_coh = array([-1, 1])
 bfcts = [s for s in spline_base.spline_base1d(max(time)+1, 10)[0].T]
 
 
-def make_trial(motion, color, trial, conditions, unit=None):
+def make_trial(motion, color, trial, conditions, unit=None, session=0):
     '''
     Each unit has a template response to motion, color, choice, context.
     The template is a linear combination of gaussian basis functions.
@@ -31,26 +32,35 @@ def make_trial(motion, color, trial, conditions, unit=None):
     y = 1-(1-x)**2 +  1-(x-0.5)**2
     y = y/max(y)
 
-    resp = resp* y
-    return {'data': resp + random.randn(len(time)) * max(abs(resp.mean()), 0.125), 'mc': conditions[0], 'colorc': conditions[1], 'unit': unit, 'trial':trial}
+    resp = resp* y + random.randn(len(time)) * max(abs(resp.mean()), 0.125)
+    return [{'data':r, 'mc': conditions[0], 'colorc': conditions[1],
+             'unit': unit, 'trial':trial, 'time':t, 'session':session} for t, r in enumerate(resp)]
 
 
-def make_experiment(Ntrials, Nunits):
-    units = datamat.AccumulatorFactory()
+def make_experiment(Ntrials, Nunits, Nsessions):
+    from itertools import product
+    units = []
+    unit_weights = {}
+    conditions = {}
+    trial_list = list(product(motion_coh, color_coh))*Ntrials
+    for trial, vals in enumerate(trial_list):
+        conditions[trial] = vals
+    for n in range(Nunits):
+        # Each unit has a certain effect profile.
+        weights = [random.randn(len(bfcts)) for _ in range(2)]
+        weights[0][-1] *= 0.8
+        weights[1][-1] *= 0.8
+        unit_weights[n] = weights
 
-    for trial in range(Ntrials):
-        conditions = [randsample(motion_coh), randsample(
-                          color_coh)]
-        for n in range(Nunits):
-            # Each unit has a certain effect profile.
-            weights = [random.randn(len(bfcts)) for _ in range(2)]
-            weights[0][-1] *= 0.8
-            weights[1][-1] *= 0.8
-            units.update(
-                make_trial(
-                    *(weights+[trial] + [conditions]),
-                    unit=n))
-    return units.get_dm()
+    for session, unit, trial in product(range(Nsessions), range(Nunits), range(Ntrials)):
+        condition = conditions[trial]
+        units.extend(make_trial(
+                                *(unit_weights[unit]+[trial] + [condition]),
+                                unit=unit, session=session))
+    data = pd.DataFrame(units)
+    data = data.set_index(['mc', 'colorc', 'unit', 'trial', 'session', 'time'])
+
+    return data.unstack('unit'), array([v for v in conditions.values()])
 
 def make_test_case(Ntrials, Nreps):
     '''

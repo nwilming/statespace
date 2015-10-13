@@ -31,13 +31,13 @@ def get_test_data(num_ftrs=20, num_samples=200, num_time=100):
     return pd.concat([make_timepoint(t,sep=s) for t, s in enumerate(np.linspace(1,0,num_time))])
 
 
-def decode(train, test, model, condition):
+def decode(train, test, model, condition, transform=None):
     '''
     Perform one iteration of training and test.
     '''
     train_labels = train.index.get_level_values(condition)
     test_labels = test.index.get_level_values(condition)
-    mdl = model().fit(train.values, train_labels)
+    mdl = model.fit(train.values, train_labels)
     prediction = mdl.predict(test.values)
     return prediction, test_labels, mdl
 
@@ -77,24 +77,33 @@ def decode_across_level(train, test, model, condition, level='samplenr'):
     This can, for example, be used to decode for each time point.
     '''
     results = []
+    models = []
     for train_t, test_t in zip(train.groupby(level=level),
                                test.groupby(level=level)):
-        p, l = decode(train_t[1], test_t[1], model, condition)[0:2]
+        p, l, mdl = decode(train_t[1], test_t[1], model(), condition)
         results.append(pd.DataFrame({level:[train_t[0]]*len(p),
                                      'trial':np.arange(len(p))+1, 'predicted':p,
                                      'label':l}))
-    return pd.concat(results)
+        models.append(mdl)
+    return pd.concat(results), models
 
 def accuracy(df, level='samplenr'):
-    results = np.ones((len(np.unique(df[level])), len(np.unique(df.fold))))*np.nan
-    for (i,j), val in df.groupby([level, 'fold']):
-        results[i,j] = sum(val.label == val.predicted)/float(len(val))
+    if 'fold' in df.columns:
+        results = np.ones((len(np.unique(df[level])), len(np.unique(df.fold))))*np.nan
+        for (i,j), val in df.groupby([level, 'fold']):
+            results[i,j] = sum(val.label == val.predicted)/float(len(val))
+    else:
+        results = np.ones((len(np.unique(df[level])), 1))*np.nan
+        for i, val in df.groupby([level]):
+            results[i,0] = sum(val.label == val.predicted)/float(len(val))
     return results
 
-def do(chunker, model, condition):
+def do(chunker, model, condition, time_level='samplenr'):
     accs = []
+    models = []
     for i,(train, test) in enumerate(chunker):
-        acc = decode_across_level(train, test, model, condition)
+        acc, mdl = decode_across_level(train, test, model, condition, level=time_level)
+        models.append(mdl)
         acc['fold'] = i
         accs.append(acc)
-    return pd.concat(accs)
+    return pd.concat(accs), models

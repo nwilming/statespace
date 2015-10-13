@@ -2,6 +2,12 @@
 # -*- coding: utf-8 -*-
 '''
 Analysis scripts for Anne's data.
+
+TODO:
+- Test decoding with artificial data.
+- Paralleliz decoding
+- Apply decoding to Anne's data.
+
 '''
 
 import h5py
@@ -13,6 +19,7 @@ from pylab import *
 import statespace as st
 import analysis
 import sklearn
+from sklearn.pipeline import Pipeline
 from sklearn.lda import LDA
 from sklearn.qda import QDA
 import decoding as dcd
@@ -29,12 +36,24 @@ second_stim = lambda x: analysis.select(x, start='stim onset', end='stim onset',
                                            baseline_offset=(0.1, -0.1))
 selectors = {'response':response_selector, 'first':first_stim, 'second':second_stim}
 
-classifier = {'SVM':sklearn.svm.SVC,
-            #'logistic': lambda: sklearn.linear_model.LogisticRegressionCV(cv=10, dual=False, class_weight='auto', n_jobs=-1),
-            'lda': lambda: LDA(),
-            'qda': lambda: QDA()}
+base_classifier = {'SVM':sklearn.svm.SVC,
+            'lda': lambda: LDA()}
 
-def parse_data(location='/Volumes/dump/Data-Anne/P%02i*cleandata.mat', subjects=[2]):
+def mkp(name, clf, steps=[('zscore', sklearn.preprocessing.StandardScaler())]):
+    '''
+    A closure for producing zscore pipelines.
+    '''
+    return lambda: Pipeline(steps=steps+[(name, clf())])
+
+classifier = dict((name, mkp(name, v)) for name, v in base_classifier.iteritems())
+classifier.update(dict((name+'sparse', mkp(name, v,
+                        steps=[('whiten', sklearn.decomposition.PCA(whiten=True, n_components=200)),
+                               ('selectbest', sklearn.feature_selection.SelectKBest(
+                                    sklearn.feature_selection.f_classif, k=25))]))
+                        for name, v in base_classifier.iteritems()))
+
+
+def parse_data(location='/Volumes/dump/Data-Anne/P%02i*cleandata.mat', subjects=[2, 9]):
     subject_files = {}
     for sub in subjects:
         sessions =  glob.glob(location%sub)
@@ -96,6 +115,7 @@ def save_subject(save_dir, subject):
     df.to_hdf(save_file, 'raw')
     del df
 
+
 def estimate_state_space(cross_validator, selector):
     pass
 
@@ -104,8 +124,6 @@ def average_trials_by_label(data, level, N, foreach=['samplenr', 'session_num'])
     '''
     Average trials of a certain condition to trade off noise vs. sample size.
     '''
-    #return pd.concat([df.groupby(lambda x: mod(x, N), level='trial_index').mean()
-    #            for a, df in data.groupby(level=foreach+[level], as_index=True)])
     if isinstance(level, basestring):
         level = [level]
     levels = foreach + level
@@ -114,9 +132,6 @@ def average_trials_by_label(data, level, N, foreach=['samplenr', 'session_num'])
         idx = df.index.get_level_values('trial_index')
         s = array([0] + cumsum(diff(idx)!=0).tolist())  //N
         for trial, val in  df.groupby(s):
-            #import pdb; pdb.set_trace()
-            #res.append(val.mean())
-            #print df
             val=val.mean().to_frame().T
             val['trial_index'] = trial
             for name, value in zip(levels, a):
@@ -124,6 +139,13 @@ def average_trials_by_label(data, level, N, foreach=['samplenr', 'session_num'])
             val.set_index(levels+['trial_index'], inplace=True)
             res.append(val)
     return pd.concat(res)
+
+def average_trial_groups(data, levels=['samplenr', 'session_num', 'choice', 'stimulus'], N=5):
+    def group(df, N):
+        group_df = df.groupby(lambda x: x[0]//N).mean();
+        group_df.index.names=['trial_index']
+        return group_df
+    return data.groupby(level=levels).apply(lambda x: group(x, N))
 
 
 def droplevels(df):
@@ -144,6 +166,7 @@ def decoding(filename, epochs, classifier={'SVM':sklearn.svm.SVC}):
     import sys
     for epoch in epochs:
         df = pd.read_hdf(filename, epoch)
+        #df = average_trials_by_label(df, ['stimulus', 'choice'], 3, foreach=['samplenr', 'session_num'])
         for target_field in ['choice', 'stimulus']:
             for name, clsf in classifier.iteritems():
                 print epoch, target_field, name
@@ -163,7 +186,7 @@ def plot_accuracy(data):
         'response':linspace(2, 2.5, 301)}
     colors = {'choice':'r', 'stimulus':'b'}
     for i, (c, classifier) in enumerate(data.groupby(['classifier'])):
-        subplot(3,1,i+1)
+        subplot(6,1,i+1)
         title(c)
         for (cond, target), d in classifier.groupby(['eppoch', 'target_field']):
             acc = dcd.accuracy(d)
