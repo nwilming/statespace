@@ -76,20 +76,23 @@ def regression_weights(data, formula, time_label='samplenr'):
             Encodes for each unit and time point the regression weights for all
             factors occuring in the formula.
     '''
-    ntime = data.shape[1]
 
     def get_weights(unit, unit_data):
-        regs = patsy.dmatrix(formula, data=unit_data.reset_index())
-        labels = regs.design_info.column_names
         coefs = []
         for time, data  in unit_data.groupby(level=time_label):
+            regs = patsy.dmatrix(formula, data=data.reset_index())
+            labels = regs.design_info.column_names
+
             idx = isnan(data.values)
             next_entry = dict((name, nan) for name in labels)
             next_entry[time_label] = time
             next_entry['unit'] = unit
             if not all(idx):
+                reg = regs[~idx,:]
+                d = data.values[~idx]
                 fit = linear_model.LinearRegression(
-                    fit_intercept=False).fit(regs[~idx, :], data.values[~idx])
+                    fit_intercept=False).fit(reg, d)
+
                 for name, value in zip(labels, fit.coef_):
                     next_entry[name] = value
             coefs.append(next_entry)
@@ -99,7 +102,8 @@ def regression_weights(data, formula, time_label='samplenr'):
 
     dfs = []
     for unit in data:
-        dfs.append(get_weights(unit, data[unit]))
+        weights = get_weights(unit, data[unit])
+        dfs.append(weights)
     betas_nt = pd.concat(dfs)
     return betas_nt
 
@@ -179,19 +183,20 @@ def regression_embedding(bnt, D, factors):
         maps :  list
             Coefficients for each unit and time point.
     '''
-    Bmax, bmax_list, norms, maps, = [], [], [], []
+    Bmax, bmax_list, norms, maps, = [], [], {}, {}
     for factor in factors:
         coefs = bnt[factor].unstack().values.T
         b = [dot(D, coefs[:, i]) for i in range(coefs.shape[1])]
-        maps.append(array(b))
+        maps[factor] = array(b)
         norm_b = [linalg.norm(bb) for bb in b]
         bmax = b[argmax(norm_b)]
         Bmax.append(bmax)
         bmax_list.append(where(b == bmax)[0][0])
-        norms.append(norm_b)
+        norms[factor] = norm_b
     Bmax = AxisArray(Bmax, factors).T
     Q, r = linalg.qr(Bmax)
     return Q, Bmax, bmax_list, norms, maps
+
 
 def embedd(data, formula, conditions=None, N_components=12,
             time_label='samplenr', filter=lambda x:gaussian_filter(x, 15)):
@@ -260,6 +265,7 @@ def get_trj(data, axis1, axis2):
     define axes in state space.
     '''
     return dot(axis1, data), dot(axis2, data)
+
 
 def get_cov():
     pass
