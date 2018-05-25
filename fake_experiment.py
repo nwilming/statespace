@@ -25,7 +25,7 @@ def make_trial(motion, color, trial, conditions, unit=None, session=0):
     The template is a linear combination of gaussian basis functions.
     '''
 
-    resp = 0*time
+    resp = 0.0*time
     for c_val, weights in zip(conditions, [motion, color]):
         resp += c_val*array([r*b for r, b in zip(weights, bfcts)]).sum(0)
     x = linspace(0., 1, len(resp))
